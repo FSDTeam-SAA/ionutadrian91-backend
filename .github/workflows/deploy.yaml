@@ -41,5 +41,5 @@ jobs:
           port: 22
           script: |
             cd /home/ec2-user/my-app
-            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml pull
-            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+            docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml pull
+            docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
