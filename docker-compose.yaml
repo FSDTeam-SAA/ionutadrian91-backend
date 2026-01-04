@@ -29,29 +29,6 @@ services:
     networks:
       - blog_network
 
-  backend:
-    container_name: simple_blog_backend
-    image: thepujon/simple_blog_backend:1.5
-    # build:
-    #   context: ./
-    #   dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    environment:
-      DATABASE_HOST: ${DATABASE_HOST}
-      DATABASE_PORT: ${DATABASE_PORT}
-      DATABASE_USER: ${POSTGRES_USER}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
-      DATABASE_NAME: ${POSTGRES_DB}
-      NODE_ENV: ${NODE_ENV}
-      CHOKIDAR_USEPOLLING: "true"
-      CHOKIDAR_INTERVAL: 1000
-    depends_on:
-      - postgres_db
-      - pg_admin
-    networks:
-      - blog_network
-
 networks:
   blog_network:
     driver: bridge
