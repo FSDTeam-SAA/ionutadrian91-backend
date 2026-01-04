@@ -40,6 +40,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           script: |
-            cd /home/ubuntu/simple-blog
-            docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml pull
-            docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build
+            cd /home/ec2-user/my-app
+            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml pull
+            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
