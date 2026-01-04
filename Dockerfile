@@ -75,7 +75,7 @@
 # CMD ["node", "dist/src/main.js"]
 
 # ---------- Build Stage ----------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -91,7 +91,7 @@ RUN npm run build
 
 
 # ---------- Runtime Stage ----------
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
@@ -103,4 +103,4 @@ COPY package*.json ./
 ENV NODE_ENV=production
 
 EXPOSE 5000
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
