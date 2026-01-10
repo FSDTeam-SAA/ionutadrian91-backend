@@ -10,6 +10,7 @@ model ActivityLogEvent {
     actionedBy String? // user id who did the action
     ipAddress  String?
     userAgent  String?
+    device     String?
     createdAt  DateTime   @default(now())
     eventType  eventType?
 
