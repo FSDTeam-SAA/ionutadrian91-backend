@@ -19,12 +19,12 @@ export class EmailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: config.email_host,
-      port: config.email_port,
+      host: String(config.email_host),
+      port: Number(config.email_port),
       secure: config.email_port === 465, // true for 465, false for other ports
       auth: {
-        user: config.email_user,
-        pass: config.email_pass,
+        user: String(config.email_user),
+        pass: String(config.email_pass),
       },
     });
   }
@@ -34,7 +34,7 @@ export class EmailService {
    */
   async sendEmail(options: EmailOptions): Promise<void> {
     const mailOptions = {
-      from: config.email_from || config.email_user,
+      from: String(config.email_from || config.email_user),
       to: options.to,
       subject: options.subject,
       text: options.text,
