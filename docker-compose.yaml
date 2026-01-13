@@ -29,11 +29,25 @@ services:
     networks:
       - blog_network
 
-  redis:
-    image: redis:7.0-alpine
-    container_name: redis_cache
+  # redis:
+  #   image: redis:7.0-alpine
+  #   container_name: redis_cache
+  #   ports:
+  #     - "6379:6379"
+  #     - "16379:16379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - blog_network
+  redis-stack:
+    image: redis/redis-stack:latest
     ports:
       - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-stack:/var/lib/redis-stack
+    environment:
+      - REDIS_ARG=-- save 900 1
     networks:
       - blog_network
 
@@ -43,6 +57,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - blog_network
 
@@ -52,3 +68,6 @@ networks:
 
 volumes:
   db_data:
+  redis-stack:
+  redis_data:
+  rabbitmq_data:
