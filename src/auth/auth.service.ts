@@ -27,10 +27,10 @@ export class AuthService {
     const { email, password, username } = payload;
     const { ip, userAgent, device } = meta;
 
-    // Check rate limiting for email, IP, and user agent
     const { LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS } = AUTH_CONFIG.RATE_LIMIT;
     const { VERIFICATION } = AUTH_CONFIG.TOKEN_EXPIRY;
 
+    // Check rate limiting for email, IP, and user agent
     await Promise.all([
       this.authUtilsService.checkRateLimit(
         `login:email:${email}`,

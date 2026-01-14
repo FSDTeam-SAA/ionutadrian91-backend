@@ -48,6 +48,8 @@ services:
       - redis-stack:/var/lib/redis-stack
     environment:
       - REDIS_ARG=-- save 900 1
+    depends_on:
+      - postgres_db
     networks:
       - blog_network
 
