@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { BlogModule } from './blog/blog.module';
+// import { BlogModule } from './blog/blog.module';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { RedisModule } from './common/modules/redis.module';
@@ -16,7 +16,7 @@ import { RedisModule } from './common/modules/redis.module';
     }),
     // Redis module (global - can be injected anywhere)
     RedisModule,
-    BlogModule,
+    // BlogModule,
     AuthModule,
     UserModule,
   ],
