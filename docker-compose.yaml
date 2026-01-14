@@ -29,29 +29,36 @@ services:
     networks:
       - blog_network
 
-  redis:
-    image: redis:7-alpine
-    container_name: redis
+  # redis:
+  #   image: redis:7.0-alpine
+  #   container_name: redis_cache
+  #   ports:
+  #     - "6379:6379"
+  #     - "16379:16379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - blog_network
+  redis-stack:
+    image: redis/redis-stack:latest
     ports:
-      - "${REDIS_PORT}:6379"
-    command: >
-      redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      REDIS_USER: ${REDIS_USER}
+      - "6379:6379"
+      - "8001:8001"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - redis-stack:/var/lib/redis-stack
+    environment:
+      - REDIS_ARG=-- save 900 1
     networks:
       - blog_network
 
-  redisinsight:
-    image: redis/redisinsight:latest
-    container_name: redisinsight
+  rabbitmq:
+    image: rabbitmq:3.11-management-alpine
+    container_name: rabbitmq_broker
     ports:
-      - "5540:5540"
-    depends_on:
-      - redis
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - blog_network
 
@@ -61,4 +68,6 @@ networks:
 
 volumes:
   db_data:
+  redis-stack:
   redis_data:
+  rabbitmq_data:
