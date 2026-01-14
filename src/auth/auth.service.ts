@@ -6,9 +6,9 @@ import { AUTH_CONFIG } from './config/auth.config';
 import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
+import { RedisService } from '../common/services/redis.service';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
-import { getRedisClient } from '../common/config/redis.config';
 import config from '../common/config/app.config';
 
 @Injectable()
@@ -18,6 +18,7 @@ export class AuthService {
     private readonly prismaService: PrismaService,
     private readonly activityLogService: ActivityLogService,
     private readonly emailService: EmailService,
+    private readonly redisService: RedisService,
   ) {}
 
   async create(
@@ -137,18 +138,18 @@ export class AuthService {
     });
 
     // Store verification code in Redis with expiry
-    const redisClient = getRedisClient();
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
+    const ttlSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
 
-    await redisClient.setex(
+    await this.redisService.set(
       verificationKey,
-      Math.floor((expiresAt.getTime() - Date.now()) / 1000),
-      JSON.stringify({
+      {
         code: verificationCode,
         userId: newUser.id,
         email: newUser.email,
         expiresAt: expiresAt.toISOString(),
-      }),
+      },
+      ttlSeconds,
     );
 
     // Send verification email
@@ -215,11 +216,15 @@ export class AuthService {
     meta: { ip: string; userAgent: string },
   ): Promise<{ message: string }> {
     const { ip, userAgent } = meta;
-    const redisClient = getRedisClient();
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
 
     // Get verification data from Redis
-    const verificationData = await redisClient.get(verificationKey);
+    const verificationData = await this.redisService.get<{
+      code: string;
+      userId: string;
+      email: string;
+      expiresAt: string;
+    }>(verificationKey);
 
     if (!verificationData) {
       throw AppError.badRequest(
@@ -227,15 +232,8 @@ export class AuthService {
       );
     }
 
-    const parsed = JSON.parse(verificationData) as {
-      code: string;
-      userId: string;
-      email: string;
-      expiresAt: string;
-    };
-
     // Validate code
-    if (parsed.code !== code) {
+    if (verificationData.code !== code) {
       throw AppError.badRequest('Invalid verification code');
     }
 
@@ -277,7 +275,7 @@ export class AuthService {
     });
 
     // Delete verification code from Redis
-    await redisClient.del(verificationKey);
+    await this.redisService.del(verificationKey);
 
     // Send welcome email
     try {
@@ -325,18 +323,18 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + Number(VERIFICATION) * 60 * 1000);
 
     // Store new verification code in Redis
-    const redisClient = getRedisClient();
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
+    const ttlSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
 
-    await redisClient.setex(
+    await this.redisService.set(
       verificationKey,
-      Math.floor((expiresAt.getTime() - Date.now()) / 1000),
-      JSON.stringify({
+      {
         code: verificationCode,
         userId: user.id,
         email: user.email,
         expiresAt: expiresAt.toISOString(),
-      }),
+      },
+      ttlSeconds,
     );
 
     // Create new email history record
