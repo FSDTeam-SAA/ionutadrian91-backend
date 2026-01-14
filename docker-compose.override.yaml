@@ -28,6 +28,6 @@ services:
     depends_on:
       - postgres_db
       - pg_admin
-      - redis
+      - redis-stack
     networks:
       - blog_network

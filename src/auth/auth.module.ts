@@ -5,6 +5,7 @@ import { AuthUtilsService } from './services/auth-utils.service';
 import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
+import { RedisService } from '../common/services/redis.service';
 
 @Module({
   controllers: [AuthController],
@@ -14,6 +15,7 @@ import { EmailService } from '../common/services/email.service';
     PrismaService,
     ActivityLogService,
     EmailService,
+    RedisService,
   ],
   exports: [AuthUtilsService],
 })
