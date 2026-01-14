@@ -41,28 +41,41 @@ services:
   #     - blog_network
   redis-stack:
     image: redis/redis-stack:latest
+    container_name: redis_cache
     ports:
       - "6379:6379"
-      - "8001:8001"
+      - "8001:8001" # RedisInsight UI
     volumes:
       - redis-stack:/var/lib/redis-stack
     environment:
-      - REDIS_ARG=-- save 900 1
+      # Redis configuration arguments
+      # - save 60 1: RDB snapshot every 60s if at least 1 key changed
+      # - maxmemory 256mb: Memory limit for cache
+      # - maxmemory-policy allkeys-lru: Evict least recently used keys when memory full
+      # - appendonly yes: Enable AOF persistence for durability
+      - REDIS_ARGS=--save 60 1 --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
     depends_on:
       - postgres_db
     networks:
       - blog_network
-
-  rabbitmq:
-    image: rabbitmq:3.11-management-alpine
-    container_name: rabbitmq_broker
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - blog_network
+  # RabbitMQ - Uncomment if you need message broker for microservices
+  # rabbitmq:
+  #   image: rabbitmq:3.11-management-alpine
+  #   container_name: rabbitmq_broker
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
+  #   networks:
+  #     - blog_network
 
 networks:
   blog_network:

@@ -1,13 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
 import { Response } from 'express';
 import httpStatus from 'http-status';
 import config from '../../common/config/app.config';
 import { ITokenPayload, UserRole } from '../interfaces/auth.interface';
 import { AUTH_CONFIG } from '../config/auth.config';
-import { deleteCachedData } from '../../common/utils/redis.utils';
+import { RedisService } from '../../common/services/redis.service';
 import AppError from '../../common/errors/app.error';
-import { getRedisClient } from '../../common/config/redis.config';
 import crypto from 'crypto';
 
 interface TokenOptions {
@@ -21,6 +20,7 @@ interface TokenOptions {
  */
 @Injectable()
 export class AuthUtilsService {
+  constructor(private readonly redisService: RedisService) {}
   /**
    * Generates a random verification code
    * */
@@ -79,8 +79,8 @@ export class AuthUtilsService {
     const refreshTokenKey = `${prefix}:user:${email}:refreshToken`;
 
     await Promise.all([
-      deleteCachedData(accessTokenKey),
-      deleteCachedData(refreshTokenKey),
+      this.redisService.del(accessTokenKey),
+      this.redisService.del(refreshTokenKey),
     ]);
 
     res.clearCookie('accessToken');
@@ -97,10 +97,9 @@ export class AuthUtilsService {
   ): Promise<boolean> {
     const cacheKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.RATE_LIMIT}${key}`;
     const lockKey = `${cacheKey}:locked`;
-    const redisClient = getRedisClient();
 
     // First check if we're in a locked state
-    const isLocked = await redisClient.get(lockKey);
+    const isLocked = await this.redisService.exists(lockKey);
     if (isLocked) {
       throw new AppError(
         httpStatus.TOO_MANY_REQUESTS,
@@ -109,16 +108,16 @@ export class AuthUtilsService {
     }
 
     // Use Redis INCR to atomically increment the counter
-    const currentAttempts = await redisClient.incr(cacheKey);
+    const currentAttempts = await this.redisService.incr(cacheKey);
 
     // Set expiry on first attempt
     if (currentAttempts === 1) {
-      await redisClient.expire(cacheKey, windowMs / 1000);
+      await this.redisService.expire(cacheKey, windowMs / 1000);
     }
 
-    if (currentAttempts > maxAttempts) {
+    if (currentAttempts && currentAttempts > maxAttempts) {
       // Set a lock with TTL instead of continuing to increment
-      await redisClient.setex(lockKey, windowMs / 1000, '1');
+      await this.redisService.set(lockKey, '1', windowMs / 1000);
       throw new AppError(
         httpStatus.TOO_MANY_REQUESTS,
         `Rate limit exceeded. Please try again after ${windowMs / 1000} seconds.`,
