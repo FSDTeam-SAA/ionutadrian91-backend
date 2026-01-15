@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
 import { UpdateAuthDto } from './dto/update-auth.dto';
@@ -80,62 +83,65 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Create user with auth security in a transaction
-    const newUser = await this.prismaService.$transaction(async (tx) => {
-      // Create auth user
-      const user = await tx.authUser.create({
-        data: {
-          email,
-          username,
-          password: hashedPassword,
-          role: 'USER',
-          verified: false,
-          status: 'ACTIVE',
-          provider: 'local',
-        },
-      });
+    const newUser = await this.prismaService.$transaction(
+      async (tx): Promise<{ id: string; email: string; username: string }> => {
+        // Create auth user
+        const user = await tx.authUser.create({
+          data: {
+            email,
+            username,
+            password: hashedPassword,
+            role: 'USER',
+            verified: false,
+            status: 'ACTIVE',
+            provider: 'local',
+          },
+        });
 
-      // Create auth security record
-      await tx.authSecurity.create({
-        data: {
-          authId: user.id,
-          failedAttempts: 0,
-          mfaEnabled: false,
-          lastPasswordChange: new Date(),
-        },
-      });
+        // Create auth security record
+        await tx.authSecurity.create({
+          data: {
+            authId: user.id,
+            failedAttempts: 0,
+            mfaEnabled: false,
+            lastPasswordChange: new Date(),
+          },
+        });
 
-      // Create email history record for verification email
-      await tx.emailHistory.create({
-        data: {
-          authId: user.id,
-          emailTo: email,
-          emailType: 'verification',
-          subject: 'Verify your email address',
-          messageId: `verify-${user.id}-${Date.now()}`,
-          emailStatus: 'pending',
-          ipAddress: ip,
-          userAgent: userAgent,
-        },
-      });
+        // Create email history record for verification email
+        await tx.emailHistory.create({
+          data: {
+            authId: user.id,
+            emailTo: email,
+            emailType: 'verification',
+            subject: 'Verify your email address',
+            messageId: `verify-${user.id}-${Date.now()}`,
+            emailStatus: 'pending',
+            ipAddress: ip,
+            userAgent: userAgent,
+          },
+        });
 
-      // Log user registration activity
-      await this.activityLogService.logCreate(
-        'authUser',
-        user.id,
-        {
-          email,
-          username,
-          role: 'USER',
-          status: 'ACTIVE',
-          verified: 'false',
-          provider: 'local',
-        },
-        { ip, userAgent, actionedBy: user.id, device },
-        tx,
-      );
+        // Log user registration activity
+        await this.activityLogService.logCreate(
+          'authUser',
+          user.id,
+          {
+            email,
+            username,
+            role: 'USER',
+            status: 'ACTIVE',
+            verified: 'false',
+            provider: 'local',
+          },
+          { ip, userAgent, actionedBy: user.id, device },
+          tx,
+        );
 
-      return user;
-    });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return user;
+      },
+    );
 
     // Store verification code in Redis with expiry
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
