@@ -5,41 +5,54 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { Observable } from 'rxjs';
-// import * as jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
+import config from '../config/app.config';
 
+/**
+ * Auth Guard - Validates JWT access tokens (truly stateless)
+ *
+ * Best Practice: Access tokens are stateless - NO Redis/DB lookup needed
+ * - Verified by JWT signature only
+ * - Contains minimal payload: { userId, role }
+ * - Short-lived (15 min) for security
+ * - Refresh token handles revocation
+ */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
 
-    console.log('token', token);
-
     if (!token) {
-      throw new UnauthorizedException('No Token Found');
+      throw new UnauthorizedException('No token found');
     }
 
     try {
-      // const payload = jwt.verify(token, process.env.JWT_SECRET!);
-      // console.log("payload", payload);
+      // Verify JWT signature and expiry (STATELESS - no DB/Redis lookup)
+      // This is the ONLY check needed for access tokens
+      const payload = jwt.verify(token, config.jwt_access_secret!) as {
+        userId: string;
+        role: string;
+      };
 
-      // request['user'] = payload;
+      // Attach user to request for downstream use
+      request['user'] = payload;
 
       return true;
     } catch (error) {
-      throw new UnauthorizedException('Invalid Token');
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedException('Token has expired');
+      }
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedException('Invalid token');
+      }
+      throw new UnauthorizedException('Authentication failed');
     }
   }
 
   /**
-   *
-   * @param request
-   * @returns
-   * For Extracting Token from Header if token is not found then return undefined
-   * For this function token will come with header in format Bearer <token> not cookies
+   * Extract token from Authorization header
+   * Format: Bearer <token>
    */
   private extractTokenFromHeader(request: Request): string | undefined {
     const authHeader = request.headers.authorization;
@@ -52,17 +65,9 @@ export class AuthGuard implements CanActivate {
   }
 
   /**
-   *
-   * @param request
-   * @returns
-   * For Extracting Token from Cookies if token is not found then return undefined
-   * For this function token will come with cookies not header
+   * Extract token from cookies (alternative method)
    */
   private extractTokenFromCookies(request: Request): string | undefined {
-    const token = request.cookies['token'];
-    if (!token) {
-      return undefined;
-    }
-    return token;
+    return request.cookies?.['accessToken'];
   }
 }

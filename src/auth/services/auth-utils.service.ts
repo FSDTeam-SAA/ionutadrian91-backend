@@ -1,9 +1,14 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
 import { Response } from 'express';
 import httpStatus from 'http-status';
 import config from '../../common/config/app.config';
-import { ITokenPayload, UserRole } from '../interfaces/auth.interface';
+import {
+  IAccessTokenPayload,
+  IRefreshTokenPayload,
+  ITokenPayload,
+  UserRole,
+} from '../interfaces/auth.interface';
 import { AUTH_CONFIG } from '../config/auth.config';
 import { RedisService } from '../../common/services/redis.service';
 import AppError from '../../common/errors/app.error';
@@ -21,14 +26,79 @@ interface TokenOptions {
 @Injectable()
 export class AuthUtilsService {
   constructor(private readonly redisService: RedisService) {}
+
+  /**
+   * Generates a cryptographically secure random ID
+   * Used for JTI (JWT ID) to prevent collisions
+   */
+  generateSecureId(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
   /**
    * Generates a random verification code
-   * */
+   */
   generateVerificationCode = (): string => {
     return crypto.randomBytes(3).toString('hex').toUpperCase().slice(0, 6);
   };
 
   /**
+   * Hash a token using SHA-256 for secure storage
+   * Never store raw tokens - only hashes
+   */
+  hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
+   * Creates an access token (stateless, minimal payload)
+   */
+  createAccessToken(
+    payload: IAccessTokenPayload,
+    expiresIn?: SignOptions['expiresIn'],
+  ): string {
+    const secret = config.jwt_access_secret;
+    if (!secret) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'JWT access secret is not configured',
+      );
+    }
+
+    const signOptions: SignOptions = {
+      expiresIn: expiresIn || AUTH_CONFIG.TOKEN_EXPIRY.ACCESS,
+      algorithm: 'HS256',
+    };
+
+    return jwt.sign(payload, secret, signOptions);
+  }
+
+  /**
+   * Creates a refresh token with JTI for revocation capability
+   */
+  createRefreshToken(
+    payload: IRefreshTokenPayload,
+    expiresIn?: SignOptions['expiresIn'],
+  ): string {
+    const secret = config.jwt_refresh_secret;
+    if (!secret) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'JWT refresh secret is not configured',
+      );
+    }
+
+    const signOptions: SignOptions = {
+      expiresIn: expiresIn || AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
+      algorithm: 'HS256',
+      jwtid: payload.jti, // Embed JTI in JWT standard claim
+    };
+
+    return jwt.sign(payload, secret, signOptions);
+  }
+
+  /**
+   * @deprecated Use createAccessToken or createRefreshToken
    * Creates a JWT token with proper options
    */
   createToken(payload: ITokenPayload, options: TokenOptions = {}): string {
@@ -54,6 +124,35 @@ export class AuthUtilsService {
   }
 
   /**
+   * Verifies an access token
+   */
+  verifyAccessToken(token: string): IAccessTokenPayload & JwtPayload {
+    const secret = config.jwt_access_secret;
+    if (!secret) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'JWT access secret is not configured',
+      );
+    }
+    return jwt.verify(token, secret) as IAccessTokenPayload & JwtPayload;
+  }
+
+  /**
+   * Verifies a refresh token and returns payload with JTI
+   */
+  verifyRefreshToken(token: string): IRefreshTokenPayload & JwtPayload {
+    const secret = config.jwt_refresh_secret;
+    if (!secret) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'JWT refresh secret is not configured',
+      );
+    }
+    return jwt.verify(token, secret) as IRefreshTokenPayload & JwtPayload;
+  }
+
+  /**
+   * @deprecated Use verifyAccessToken or verifyRefreshToken
    * Verifies a JWT token
    */
   verifyToken(token: string): JwtPayload {
