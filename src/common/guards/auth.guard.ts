@@ -5,20 +5,21 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { Observable } from 'rxjs';
 import * as jwt from 'jsonwebtoken';
 import config from '../config/app.config';
-import { RedisService } from '../services/redis.service';
 
 /**
- * Auth Guard - Validates JWT tokens with blacklist check
- * Best Practice: Stateless JWT + Redis blacklist for logout
+ * Auth Guard - Validates JWT access tokens (truly stateless)
+ *
+ * Best Practice: Access tokens are stateless - NO Redis/DB lookup needed
+ * - Verified by JWT signature only
+ * - Contains minimal payload: { userId, role }
+ * - Short-lived (15 min) for security
+ * - Refresh token handles revocation
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly redisService: RedisService) {}
-
-  async canActivate(context: ExecutionContext): Promise<boolean> {
+  canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
 
@@ -27,31 +28,25 @@ export class AuthGuard implements CanActivate {
     }
 
     try {
-      // Verify JWT signature and expiry (STATELESS - no DB lookup)
+      // Verify JWT signature and expiry (STATELESS - no DB/Redis lookup)
+      // This is the ONLY check needed for access tokens
       const payload = jwt.verify(token, config.jwt_access_secret!) as {
         userId: string;
-        email: string;
         role: string;
       };
-
-      // Check if token is blacklisted (only for explicit logout)
-      // This is the ONLY Redis check - much faster than storing all tokens
-      const blacklistKey = `${config.redis_cache_key_prefix}:token_blacklist:${token}`;
-      const isBlacklisted = await this.redisService.exists(blacklistKey);
-
-      if (isBlacklisted) {
-        throw new UnauthorizedException('Token has been revoked');
-      }
 
       // Attach user to request for downstream use
       request['user'] = payload;
 
       return true;
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
+      if (error instanceof jwt.TokenExpiredError) {
+        throw new UnauthorizedException('Token has expired');
       }
-      throw new UnauthorizedException('Invalid or expired token');
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new UnauthorizedException('Invalid token');
+      }
+      throw new UnauthorizedException('Authentication failed');
     }
   }
 

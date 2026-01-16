@@ -9,6 +9,16 @@ import { RedisService } from '../common/services/redis.service';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
 import config from '../common/config/app.config';
+import {
+  ILoginResponse,
+  IStoredRefreshToken,
+  UserRole,
+} from './interfaces/auth.interface';
+
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 
 @Injectable()
 export class AuthService {
@@ -378,18 +388,7 @@ export class AuthService {
   async login(
     payload: { email: string; password: string },
     meta: { ip: string; userAgent: string; device?: string },
-  ): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    user: {
-      id: string;
-      email: string;
-      username: string;
-      role: string;
-      verified: boolean;
-    };
-    expiresIn: number;
-  }> {
+  ): Promise<ILoginResponse> {
     const { email, password } = payload;
     const { ip, userAgent, device } = meta;
 
@@ -397,8 +396,8 @@ export class AuthService {
     const { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } =
       AUTH_CONFIG.ACCOUNT_LOCKOUT;
 
-    // Check rate limiting for email, IP, and user agent in parallel
-    // This prevents brute force attacks at multiple levels
+    // Rate limiting: Only by email and IP (removed user-agent to prevent Redis explosion)
+    // User-agent can be easily spoofed/randomized by attackers
     await Promise.all([
       this.authUtilsService.checkRateLimit(
         `login:email:${email}`,
@@ -410,15 +409,9 @@ export class AuthService {
         LOGIN_MAX_ATTEMPTS,
         LOGIN_WINDOW_MS,
       ),
-      this.authUtilsService.checkRateLimit(
-        `login:ua:${userAgent}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
     ]);
 
-    // Fetch user with security data in single query (optimized for scale)
-    // Using select to minimize data transfer and improve query performance
+    // Fetch user with security data in single optimized query
     const user = await this.prismaService.authUser.findUnique({
       where: { email },
       select: {
@@ -441,14 +434,23 @@ export class AuthService {
       },
     });
 
-    // Generic error message to prevent user enumeration attacks
+    // Generic error message to prevent user enumeration
     const invalidCredentialsError = AppError.unauthorized(
       'Invalid email or password',
     );
 
+    // CRITICAL: Timing attack prevention
+    // Always run bcrypt.compare even if user doesn't exist
+    // This ensures consistent response time regardless of user existence
+    const fakePasswordHash =
+      '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G4.4.G4.G4.G4.G';
+
     if (!user) {
-      // Log failed attempt for non-existent user (security monitoring)
-      await this.logLoginAttempt({
+      // Run fake bcrypt to prevent timing attacks (~200ms)
+      await bcrypt.compare(password, fakePasswordHash);
+
+      // Log failed attempt (fire-and-forget)
+      void this.logLoginAttempt({
         authId: null,
         ip,
         userAgent,
@@ -456,10 +458,11 @@ export class AuthService {
         success: false,
         failureReason: 'user_not_found',
       });
+
       throw invalidCredentialsError;
     }
 
-    // Check if user is using OAuth provider
+    // Check OAuth provider
     if (user.provider !== 'local') {
       throw AppError.badRequest(
         `Please login using ${user.provider} authentication`,
@@ -468,7 +471,7 @@ export class AuthService {
 
     // Check account status
     if (user.status === 'BLOCKED' || user.status === 'SUSPENDED') {
-      await this.logLoginAttempt({
+      void this.logLoginAttempt({
         authId: user.id,
         ip,
         userAgent,
@@ -482,16 +485,18 @@ export class AuthService {
     }
 
     if (user.status === 'DELETED' || user.status === 'INACTIVE') {
+      // Run bcrypt to maintain consistent timing
+      await bcrypt.compare(password, user.password);
       throw invalidCredentialsError;
     }
 
-    // Check account lockout status
+    // Check account lockout
     const security = user.authSecurity;
     if (security?.lockExpiresAt && new Date() < security.lockExpiresAt) {
       const remainingTime = Math.ceil(
         (security.lockExpiresAt.getTime() - Date.now()) / 1000 / 60,
       );
-      await this.logLoginAttempt({
+      void this.logLoginAttempt({
         authId: user.id,
         ip,
         userAgent,
@@ -505,11 +510,10 @@ export class AuthService {
       );
     }
 
-    // Verify password using constant-time comparison (bcrypt handles this)
+    // Verify password (bcrypt uses constant-time comparison internally)
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
-      // Handle failed login attempt
       await this.handleFailedLoginAttempt(
         user.id,
         security?.failedAttempts || 0,
@@ -520,9 +524,9 @@ export class AuthService {
       throw invalidCredentialsError;
     }
 
-    // Check email verification status
+    // Check email verification
     if (!user.verified) {
-      await this.logLoginAttempt({
+      void this.logLoginAttempt({
         authId: user.id,
         ip,
         userAgent,
@@ -535,55 +539,51 @@ export class AuthService {
       );
     }
 
-    // Generate tokens with optimized payload (minimal data for scalability)
-    // JWT is STATELESS - no Redis lookup needed on every request
-    const tokenPayload = {
+    // Generate JTI FIRST (cryptographically secure)
+    const jti: string = this.authUtilsService.generateSecureId();
+
+    // Create access token (stateless, minimal payload - no email)
+    const accessToken: string = this.authUtilsService.createAccessToken({
       userId: user.id,
-      email: user.email,
-      role: user.role as unknown as import('./interfaces/auth.interface').UserRole,
-    };
+      role: user.role as unknown as UserRole,
+    });
 
-    const [accessToken, refreshToken] = await Promise.all([
-      Promise.resolve(
-        this.authUtilsService.createToken(tokenPayload, {
-          isRefresh: false,
-          expiresIn: AUTH_CONFIG.TOKEN_EXPIRY.ACCESS,
-        }),
-      ),
-      Promise.resolve(
-        this.authUtilsService.createToken(tokenPayload, {
-          isRefresh: true,
-          expiresIn: AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
-        }),
-      ),
-    ]);
+    // Create refresh token with JTI embedded
+    const refreshToken: string = this.authUtilsService.createRefreshToken({
+      userId: user.id,
+      jti,
+    });
 
-    // Parse token expiry to seconds
+    // Hash the refresh token for secure storage (never store raw tokens)
+    const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
+
+    // Calculate TTL
     const refreshTokenTTL = this.parseExpiryToSeconds(
       AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
     );
 
-    // Generate unique refresh token ID for revocation capability
-    const refreshTokenId = `${user.id}:${Date.now()}:${Math.random().toString(36).substring(7)}`;
-    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${refreshTokenId}`;
+    // Redis key with proper naming convention
+    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${user.id}:${jti}`;
 
-    // Execute all async operations in parallel for better performance
-    // BEST PRACTICE: Access token is STATELESS (no Redis), only refresh token in Redis
+    // Stored token data (with hash, not raw token)
+    const storedTokenData: IStoredRefreshToken = {
+      userId: user.id,
+      jti,
+      tokenHash, // Store hash, not raw token
+      ip,
+      userAgent,
+      device,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Execute all async operations in parallel
     await Promise.all([
-      // Store ONLY refresh token in Redis for revocation capability
-      // Access token is stateless - verified by signature only
-      this.redisService.set(
-        refreshTokenKey,
-        {
-          userId: user.id,
-          tokenId: refreshTokenId,
-          ip,
-          userAgent,
-          device,
-          createdAt: new Date().toISOString(),
-        },
-        refreshTokenTTL,
-      ),
+      // Store refresh token hash in Redis
+      this.redisService.set(refreshTokenKey, storedTokenData, refreshTokenTTL),
+      // Track session in user's session list
+      this.addUserSession(user.id, jti, refreshTokenTTL),
+      // Enforce max devices limit
+      this.enforceMaxDevices(user.id, AUTH_CONFIG.SESSION.MAX_DEVICES_PER_USER),
       // Reset failed attempts on successful login
       security
         ? this.prismaService.authSecurity.update({
@@ -595,8 +595,7 @@ export class AuthService {
             },
           })
         : Promise.resolve(),
-      // Log successful login (loginHistory handles all login tracking)
-      // No need for separate activity log for login events
+      // Log successful login (fire-and-forget)
       this.logLoginAttempt({
         authId: user.id,
         ip,
@@ -621,42 +620,254 @@ export class AuthService {
   }
 
   /**
-   * Logout user by blacklisting their access token
-   * Best practice: Only blacklist when user explicitly logs out
+   * Refresh access token using refresh token
+   * Implements token rotation for security
+   */
+  async refreshToken(
+    refreshToken: string,
+    meta: { ip: string; userAgent: string; device?: string },
+  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    const { ip, userAgent, device } = meta;
+
+    // Verify and decode refresh token
+    let decoded: { userId: string; jti: string };
+    try {
+      const payload = this.authUtilsService.verifyRefreshToken(refreshToken);
+      decoded = {
+        userId: payload.userId,
+        jti: payload.jti,
+      };
+    } catch {
+      throw AppError.unauthorized('Invalid or expired refresh token');
+    }
+
+    const { userId, jti } = decoded;
+    if (!userId || !jti) {
+      throw AppError.unauthorized('Invalid refresh token payload');
+    }
+
+    // Get stored token data from Redis
+    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
+    const storedData =
+      await this.redisService.get<IStoredRefreshToken>(refreshTokenKey);
+
+    if (!storedData) {
+      // Token not found - possibly already rotated or revoked
+      // This could indicate a replay attack - revoke all user tokens
+      await this.revokeAllUserTokens(userId);
+      throw AppError.unauthorized(
+        'Refresh token has been revoked. Please login again.',
+      );
+    }
+
+    // Validate token hash (ensures token hasn't been tampered with)
+    const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
+    if (storedData.tokenHash !== tokenHash) {
+      // Token mismatch - potential attack, revoke all tokens
+      await this.revokeAllUserTokens(userId);
+      throw AppError.unauthorized('Invalid refresh token');
+    }
+
+    // Fetch user to get current role (may have changed)
+    const user = await this.prismaService.authUser.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, status: true },
+    });
+
+    if (!user || user.status !== 'ACTIVE') {
+      await this.revokeAllUserTokens(userId);
+      throw AppError.unauthorized('User account is not active');
+    }
+
+    // TOKEN ROTATION: Generate new JTI for new refresh token
+    const newJti: string = this.authUtilsService.generateSecureId();
+
+    // Create new tokens
+    const newAccessToken: string = this.authUtilsService.createAccessToken({
+      userId: user.id,
+      role: user.role as unknown as UserRole,
+    });
+
+    const newRefreshToken: string = this.authUtilsService.createRefreshToken({
+      userId: user.id,
+      jti: newJti,
+    });
+
+    const newTokenHash: string =
+      this.authUtilsService.hashToken(newRefreshToken);
+    const refreshTokenTTL = this.parseExpiryToSeconds(
+      AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
+    );
+
+    const newRefreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${newJti}`;
+
+    const newStoredData: IStoredRefreshToken = {
+      userId,
+      jti: newJti,
+      tokenHash: newTokenHash,
+      ip,
+      userAgent,
+      device,
+      createdAt: new Date().toISOString(),
+      rotatedFrom: jti, // Track rotation chain
+    };
+
+    // Atomic rotation: delete old token and create new one
+    await Promise.all([
+      // Delete old refresh token
+      this.redisService.del(refreshTokenKey),
+      // Remove old JTI from session list
+      this.removeUserSession(userId, jti),
+      // Store new refresh token
+      this.redisService.set(newRefreshTokenKey, newStoredData, refreshTokenTTL),
+      // Add new JTI to session list
+      this.addUserSession(userId, newJti, refreshTokenTTL),
+    ]);
+
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
+    };
+  }
+
+  /**
+   * Logout user by revoking their refresh token
    */
   async logout(
-    accessToken: string,
+    refreshToken: string,
     userId: string,
   ): Promise<{ message: string }> {
-    // Verify token first
-    const decoded = this.authUtilsService.verifyToken(accessToken);
+    // Verify refresh token
+    let decoded;
+    try {
+      decoded = this.authUtilsService.verifyRefreshToken(refreshToken);
+    } catch {
+      // Token already invalid, just return success
+      return { message: 'Logged out successfully' };
+    }
+
     if (decoded.userId !== userId) {
       throw AppError.unauthorized('Invalid token');
     }
 
-    // Calculate remaining TTL for the token
-    const expiresAt = decoded.exp ? decoded.exp * 1000 : Date.now() + 3600000;
-    const remainingTTL = Math.max(
-      0,
-      Math.floor((expiresAt - Date.now()) / 1000),
-    );
+    const { jti } = decoded;
+    if (jti) {
+      const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
 
-    if (remainingTTL > 0) {
-      // Blacklist the access token in Redis (only until it expires naturally)
-      const blacklistKey = `${config.redis_cache_key_prefix}:token_blacklist:${accessToken}`;
-      await this.redisService.set(
-        blacklistKey,
-        { userId, loggedOutAt: new Date().toISOString() },
-        remainingTTL,
-      );
+      await Promise.all([
+        this.redisService.del(refreshTokenKey),
+        this.removeUserSession(userId, jti),
+      ]);
     }
 
     return { message: 'Logged out successfully' };
   }
 
   /**
-   * Handle failed login attempt with account lockout mechanism
-   * Optimized for high concurrency with atomic Redis operations
+   * Logout from all devices by revoking all refresh tokens
+   */
+  async logoutAllDevices(userId: string): Promise<{ message: string }> {
+    await this.revokeAllUserTokens(userId);
+    return { message: 'Logged out from all devices successfully' };
+  }
+
+  /**
+   * Add a session (JTI) to user's session list
+   */
+  private async addUserSession(
+    userId: string,
+    jti: string,
+    ttl: number,
+  ): Promise<void> {
+    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
+
+    // Get current sessions
+    const sessions =
+      (await this.redisService.get<string[]>(userSessionsKey)) || [];
+
+    // Add new session
+    sessions.push(jti);
+
+    // Store updated sessions
+    await this.redisService.set(userSessionsKey, sessions, ttl);
+  }
+
+  /**
+   * Remove a session from user's session list
+   */
+  private async removeUserSession(userId: string, jti: string): Promise<void> {
+    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
+
+    const sessions =
+      (await this.redisService.get<string[]>(userSessionsKey)) || [];
+    const updatedSessions = sessions.filter((s) => s !== jti);
+
+    if (updatedSessions.length > 0) {
+      const ttl = this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.REFRESH);
+      await this.redisService.set(userSessionsKey, updatedSessions, ttl);
+    } else {
+      await this.redisService.del(userSessionsKey);
+    }
+  }
+
+  /**
+   * Enforce maximum devices per user
+   * Removes oldest sessions when limit exceeded
+   */
+  private async enforceMaxDevices(
+    userId: string,
+    maxDevices: number,
+  ): Promise<void> {
+    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
+
+    const sessions =
+      (await this.redisService.get<string[]>(userSessionsKey)) || [];
+
+    if (sessions.length <= maxDevices) {
+      return;
+    }
+
+    // Remove oldest sessions (first in list)
+    const sessionsToRemove = sessions.slice(
+      0,
+      sessions.length - maxDevices + 1,
+    );
+
+    await Promise.all(
+      sessionsToRemove.map(async (jti) => {
+        const tokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
+        await this.redisService.del(tokenKey);
+      }),
+    );
+
+    // Keep only the most recent sessions
+    const updatedSessions = sessions.slice(sessions.length - maxDevices + 1);
+    const ttl = this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.REFRESH);
+    await this.redisService.set(userSessionsKey, updatedSessions, ttl);
+  }
+
+  /**
+   * Revoke all refresh tokens for a user (security measure)
+   */
+  private async revokeAllUserTokens(userId: string): Promise<void> {
+    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
+
+    const sessions =
+      (await this.redisService.get<string[]>(userSessionsKey)) || [];
+
+    // Delete all refresh tokens
+    await Promise.all([
+      ...sessions.map((jti) => {
+        const tokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
+        return this.redisService.del(tokenKey);
+      }),
+      this.redisService.del(userSessionsKey),
+    ]);
+  }
+
+  /**
+   * Handle failed login attempt with account lockout
    */
   private async handleFailedLoginAttempt(
     userId: string,
@@ -668,7 +879,6 @@ export class AuthService {
     const newFailedAttempts = currentFailedAttempts + 1;
     const shouldLock = newFailedAttempts >= maxAttempts;
 
-    // Update security record with new failed attempt count
     await Promise.all([
       this.prismaService.authSecurity.update({
         where: { authId: userId },
@@ -693,8 +903,7 @@ export class AuthService {
   }
 
   /**
-   * Log login attempt to history for security auditing
-   * Uses fire-and-forget pattern for non-blocking writes at scale
+   * Log login attempt (fire-and-forget for non-blocking writes)
    */
   private logLoginAttempt(data: {
     authId: string | null;
@@ -706,13 +915,10 @@ export class AuthService {
     attemptNumber?: number;
     isSuspicious?: boolean;
   }): Promise<void> {
-    // Skip if no authId (user doesn't exist)
     if (!data.authId) {
       return Promise.resolve();
     }
 
-    // Fire-and-forget for non-blocking write (scale optimization)
-    // Return immediately, let the write happen in background
     return this.prismaService.loginHistory
       .create({
         data: {
@@ -729,19 +935,17 @@ export class AuthService {
       })
       .then(() => undefined)
       .catch((error) => {
-        // Log error but don't fail the login process
         console.error('Failed to log login attempt:', error);
       });
   }
 
   /**
    * Parse token expiry string to seconds
-   * Supports formats: '1h', '7d', '30m', '3600s', '3600'
    */
   private parseExpiryToSeconds(expiry: string): number {
     const match = expiry.match(/^(\d+)([smhd])?$/);
     if (!match) {
-      return 3600; // Default 1 hour
+      return 3600;
     }
 
     const value = parseInt(match[1], 10);
