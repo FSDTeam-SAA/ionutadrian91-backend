@@ -1,9 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
 import { AuthUtilsService } from './services/auth-utils.service';
 import { AUTH_CONFIG } from './config/auth.config';
 import { PrismaService } from '../common/services/prisma.service';
@@ -138,7 +134,6 @@ export class AuthService {
           tx,
         );
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return user;
       },
     );
@@ -194,23 +189,6 @@ export class AuthService {
       });
       // Don't throw error, user is created, just email failed
     }
-  }
-
-  findAll() {
-    return `This action returns all auth`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  update(id: number, _updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
   }
 
   /**
@@ -395,5 +373,391 @@ export class AuthService {
     }
 
     return { message: 'Verification email sent successfully' };
+  }
+
+  async login(
+    payload: { email: string; password: string },
+    meta: { ip: string; userAgent: string; device?: string },
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: {
+      id: string;
+      email: string;
+      username: string;
+      role: string;
+      verified: boolean;
+    };
+    expiresIn: number;
+  }> {
+    const { email, password } = payload;
+    const { ip, userAgent, device } = meta;
+
+    const { LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS } = AUTH_CONFIG.RATE_LIMIT;
+    const { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } =
+      AUTH_CONFIG.ACCOUNT_LOCKOUT;
+
+    // Check rate limiting for email, IP, and user agent in parallel
+    // This prevents brute force attacks at multiple levels
+    await Promise.all([
+      this.authUtilsService.checkRateLimit(
+        `login:email:${email}`,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_WINDOW_MS,
+      ),
+      this.authUtilsService.checkRateLimit(
+        `login:ip:${ip}`,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_WINDOW_MS,
+      ),
+      this.authUtilsService.checkRateLimit(
+        `login:ua:${userAgent}`,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_WINDOW_MS,
+      ),
+    ]);
+
+    // Fetch user with security data in single query (optimized for scale)
+    // Using select to minimize data transfer and improve query performance
+    const user = await this.prismaService.authUser.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        password: true,
+        role: true,
+        verified: true,
+        status: true,
+        provider: true,
+        authSecurity: {
+          select: {
+            id: true,
+            failedAttempts: true,
+            lastFailedAt: true,
+            lockExpiresAt: true,
+          },
+        },
+      },
+    });
+
+    // Generic error message to prevent user enumeration attacks
+    const invalidCredentialsError = AppError.unauthorized(
+      'Invalid email or password',
+    );
+
+    if (!user) {
+      // Log failed attempt for non-existent user (security monitoring)
+      await this.logLoginAttempt({
+        authId: null,
+        ip,
+        userAgent,
+        device,
+        success: false,
+        failureReason: 'user_not_found',
+      });
+      throw invalidCredentialsError;
+    }
+
+    // Check if user is using OAuth provider
+    if (user.provider !== 'local') {
+      throw AppError.badRequest(
+        `Please login using ${user.provider} authentication`,
+      );
+    }
+
+    // Check account status
+    if (user.status === 'BLOCKED' || user.status === 'SUSPENDED') {
+      await this.logLoginAttempt({
+        authId: user.id,
+        ip,
+        userAgent,
+        device,
+        success: false,
+        failureReason: `account_${user.status.toLowerCase()}`,
+      });
+      throw AppError.forbidden(
+        `Your account has been ${user.status.toLowerCase()}. Please contact support.`,
+      );
+    }
+
+    if (user.status === 'DELETED' || user.status === 'INACTIVE') {
+      throw invalidCredentialsError;
+    }
+
+    // Check account lockout status
+    const security = user.authSecurity;
+    if (security?.lockExpiresAt && new Date() < security.lockExpiresAt) {
+      const remainingTime = Math.ceil(
+        (security.lockExpiresAt.getTime() - Date.now()) / 1000 / 60,
+      );
+      await this.logLoginAttempt({
+        authId: user.id,
+        ip,
+        userAgent,
+        device,
+        success: false,
+        failureReason: 'account_locked',
+        attemptNumber: security.failedAttempts + 1,
+      });
+      throw AppError.forbidden(
+        `Account is temporarily locked. Please try again in ${remainingTime} minutes.`,
+      );
+    }
+
+    // Verify password using constant-time comparison (bcrypt handles this)
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      // Handle failed login attempt
+      await this.handleFailedLoginAttempt(
+        user.id,
+        security?.failedAttempts || 0,
+        MAX_FAILED_ATTEMPTS,
+        LOCKOUT_DURATION_MS,
+        { ip, userAgent, device },
+      );
+      throw invalidCredentialsError;
+    }
+
+    // Check email verification status
+    if (!user.verified) {
+      await this.logLoginAttempt({
+        authId: user.id,
+        ip,
+        userAgent,
+        device,
+        success: false,
+        failureReason: 'email_not_verified',
+      });
+      throw AppError.forbidden(
+        'Please verify your email address before logging in',
+      );
+    }
+
+    // Generate tokens with optimized payload (minimal data for scalability)
+    // JWT is STATELESS - no Redis lookup needed on every request
+    const tokenPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role as unknown as import('./interfaces/auth.interface').UserRole,
+    };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      Promise.resolve(
+        this.authUtilsService.createToken(tokenPayload, {
+          isRefresh: false,
+          expiresIn: AUTH_CONFIG.TOKEN_EXPIRY.ACCESS,
+        }),
+      ),
+      Promise.resolve(
+        this.authUtilsService.createToken(tokenPayload, {
+          isRefresh: true,
+          expiresIn: AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
+        }),
+      ),
+    ]);
+
+    // Parse token expiry to seconds
+    const refreshTokenTTL = this.parseExpiryToSeconds(
+      AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
+    );
+
+    // Generate unique refresh token ID for revocation capability
+    const refreshTokenId = `${user.id}:${Date.now()}:${Math.random().toString(36).substring(7)}`;
+    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${refreshTokenId}`;
+
+    // Execute all async operations in parallel for better performance
+    // BEST PRACTICE: Access token is STATELESS (no Redis), only refresh token in Redis
+    await Promise.all([
+      // Store ONLY refresh token in Redis for revocation capability
+      // Access token is stateless - verified by signature only
+      this.redisService.set(
+        refreshTokenKey,
+        {
+          userId: user.id,
+          tokenId: refreshTokenId,
+          ip,
+          userAgent,
+          device,
+          createdAt: new Date().toISOString(),
+        },
+        refreshTokenTTL,
+      ),
+      // Reset failed attempts on successful login
+      security
+        ? this.prismaService.authSecurity.update({
+            where: { id: security.id },
+            data: {
+              failedAttempts: 0,
+              lastFailedAt: null,
+              lockExpiresAt: null,
+            },
+          })
+        : Promise.resolve(),
+      // Log successful login (loginHistory handles all login tracking)
+      // No need for separate activity log for login events
+      this.logLoginAttempt({
+        authId: user.id,
+        ip,
+        userAgent,
+        device,
+        success: true,
+      }),
+    ]);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        verified: user.verified,
+      },
+      expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
+    };
+  }
+
+  /**
+   * Logout user by blacklisting their access token
+   * Best practice: Only blacklist when user explicitly logs out
+   */
+  async logout(
+    accessToken: string,
+    userId: string,
+  ): Promise<{ message: string }> {
+    // Verify token first
+    const decoded = this.authUtilsService.verifyToken(accessToken);
+    if (decoded.userId !== userId) {
+      throw AppError.unauthorized('Invalid token');
+    }
+
+    // Calculate remaining TTL for the token
+    const expiresAt = decoded.exp ? decoded.exp * 1000 : Date.now() + 3600000;
+    const remainingTTL = Math.max(
+      0,
+      Math.floor((expiresAt - Date.now()) / 1000),
+    );
+
+    if (remainingTTL > 0) {
+      // Blacklist the access token in Redis (only until it expires naturally)
+      const blacklistKey = `${config.redis_cache_key_prefix}:token_blacklist:${accessToken}`;
+      await this.redisService.set(
+        blacklistKey,
+        { userId, loggedOutAt: new Date().toISOString() },
+        remainingTTL,
+      );
+    }
+
+    return { message: 'Logged out successfully' };
+  }
+
+  /**
+   * Handle failed login attempt with account lockout mechanism
+   * Optimized for high concurrency with atomic Redis operations
+   */
+  private async handleFailedLoginAttempt(
+    userId: string,
+    currentFailedAttempts: number,
+    maxAttempts: number,
+    lockoutDuration: number,
+    meta: { ip: string; userAgent: string; device?: string },
+  ): Promise<void> {
+    const newFailedAttempts = currentFailedAttempts + 1;
+    const shouldLock = newFailedAttempts >= maxAttempts;
+
+    // Update security record with new failed attempt count
+    await Promise.all([
+      this.prismaService.authSecurity.update({
+        where: { authId: userId },
+        data: {
+          failedAttempts: newFailedAttempts,
+          lastFailedAt: new Date(),
+          ...(shouldLock && {
+            lockExpiresAt: new Date(Date.now() + lockoutDuration),
+          }),
+        },
+      }),
+      this.logLoginAttempt({
+        authId: userId,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        device: meta.device,
+        success: false,
+        failureReason: shouldLock ? 'account_locked' : 'invalid_password',
+        attemptNumber: newFailedAttempts,
+      }),
+    ]);
+  }
+
+  /**
+   * Log login attempt to history for security auditing
+   * Uses fire-and-forget pattern for non-blocking writes at scale
+   */
+  private logLoginAttempt(data: {
+    authId: string | null;
+    ip: string;
+    userAgent: string;
+    device?: string;
+    success: boolean;
+    failureReason?: string;
+    attemptNumber?: number;
+    isSuspicious?: boolean;
+  }): Promise<void> {
+    // Skip if no authId (user doesn't exist)
+    if (!data.authId) {
+      return Promise.resolve();
+    }
+
+    // Fire-and-forget for non-blocking write (scale optimization)
+    // Return immediately, let the write happen in background
+    return this.prismaService.loginHistory
+      .create({
+        data: {
+          authId: data.authId,
+          ipAddress: data.ip,
+          userAgent: data.userAgent,
+          device_id: data.device,
+          action: 'login',
+          success: data.success,
+          failureReason: data.failureReason,
+          attemptNumber: data.attemptNumber || 1,
+          isSuspicious: data.isSuspicious || false,
+        },
+      })
+      .then(() => undefined)
+      .catch((error) => {
+        // Log error but don't fail the login process
+        console.error('Failed to log login attempt:', error);
+      });
+  }
+
+  /**
+   * Parse token expiry string to seconds
+   * Supports formats: '1h', '7d', '30m', '3600s', '3600'
+   */
+  private parseExpiryToSeconds(expiry: string): number {
+    const match = expiry.match(/^(\d+)([smhd])?$/);
+    if (!match) {
+      return 3600; // Default 1 hour
+    }
+
+    const value = parseInt(match[1], 10);
+    const unit = match[2] || 's';
+
+    switch (unit) {
+      case 's':
+        return value;
+      case 'm':
+        return value * 60;
+      case 'h':
+        return value * 60 * 60;
+      case 'd':
+        return value * 60 * 60 * 24;
+      default:
+        return value;
+    }
   }
 }

@@ -6,40 +6,58 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { Observable } from 'rxjs';
-// import * as jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
+import config from '../config/app.config';
+import { RedisService } from '../services/redis.service';
 
+/**
+ * Auth Guard - Validates JWT tokens with blacklist check
+ * Best Practice: Stateless JWT + Redis blacklist for logout
+ */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  canActivate(
-    context: ExecutionContext,
-  ): boolean | Promise<boolean> | Observable<boolean> {
+  constructor(private readonly redisService: RedisService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
 
-    console.log('token', token);
-
     if (!token) {
-      throw new UnauthorizedException('No Token Found');
+      throw new UnauthorizedException('No token found');
     }
 
     try {
-      // const payload = jwt.verify(token, process.env.JWT_SECRET!);
-      // console.log("payload", payload);
+      // Verify JWT signature and expiry (STATELESS - no DB lookup)
+      const payload = jwt.verify(token, config.jwt_access_secret!) as {
+        userId: string;
+        email: string;
+        role: string;
+      };
 
-      // request['user'] = payload;
+      // Check if token is blacklisted (only for explicit logout)
+      // This is the ONLY Redis check - much faster than storing all tokens
+      const blacklistKey = `${config.redis_cache_key_prefix}:token_blacklist:${token}`;
+      const isBlacklisted = await this.redisService.exists(blacklistKey);
+
+      if (isBlacklisted) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+
+      // Attach user to request for downstream use
+      request['user'] = payload;
 
       return true;
     } catch (error) {
-      throw new UnauthorizedException('Invalid Token');
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid or expired token');
     }
   }
 
   /**
-   *
-   * @param request
-   * @returns
-   * For Extracting Token from Header if token is not found then return undefined
-   * For this function token will come with header in format Bearer <token> not cookies
+   * Extract token from Authorization header
+   * Format: Bearer <token>
    */
   private extractTokenFromHeader(request: Request): string | undefined {
     const authHeader = request.headers.authorization;
@@ -52,17 +70,9 @@ export class AuthGuard implements CanActivate {
   }
 
   /**
-   *
-   * @param request
-   * @returns
-   * For Extracting Token from Cookies if token is not found then return undefined
-   * For this function token will come with cookies not header
+   * Extract token from cookies (alternative method)
    */
   private extractTokenFromCookies(request: Request): string | undefined {
-    const token = request.cookies['token'];
-    if (!token) {
-      return undefined;
-    }
-    return token;
+    return request.cookies?.['accessToken'];
   }
 }
