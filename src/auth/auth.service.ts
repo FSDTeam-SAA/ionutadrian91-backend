@@ -52,11 +52,6 @@ export class AuthService {
         LOGIN_MAX_ATTEMPTS,
         LOGIN_WINDOW_MS,
       ),
-      this.authUtilsService.checkRateLimit(
-        `login:ua:${userAgent}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
     ]);
 
     // Validate password strength
@@ -396,8 +391,7 @@ export class AuthService {
     const { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } =
       AUTH_CONFIG.ACCOUNT_LOCKOUT;
 
-    // Rate limiting: Only by email and IP (removed user-agent to prevent Redis explosion)
-    // User-agent can be easily spoofed/randomized by attackers
+    // Rate limiting
     await Promise.all([
       this.authUtilsService.checkRateLimit(
         `login:email:${email}`,
@@ -539,84 +533,157 @@ export class AuthService {
       );
     }
 
-    // Generate JTI FIRST (cryptographically secure)
-    const jti: string = this.authUtilsService.generateSecureId();
+    // Distributed lock to prevent concurrent login race conditions
+    const lockKey = `${config.redis_cache_key_prefix}:lock:login:${user.id}`;
+    const lockAcquired = await this.redisService.setNX(lockKey, '1', 5); // 5 second TTL
 
-    // Create access token (stateless, minimal payload - no email)
-    const accessToken: string = this.authUtilsService.createAccessToken({
-      userId: user.id,
-      role: user.role as unknown as UserRole,
-    });
+    if (!lockAcquired) {
+      throw AppError.conflict(
+        'Another login is in progress. Please try again in a moment.',
+      );
+    }
 
-    // Create refresh token with JTI embedded
-    const refreshToken: string = this.authUtilsService.createRefreshToken({
-      userId: user.id,
-      jti,
-    });
+    try {
+      // Generate JTI FIRST (cryptographically secure)
+      const jti: string = this.authUtilsService.generateSecureId();
 
-    // Hash the refresh token for secure storage (never store raw tokens)
-    const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
+      // Create access token (stateless, minimal payload - no email)
+      const accessToken: string = this.authUtilsService.createAccessToken({
+        userId: user.id,
+        role: user.role as unknown as UserRole,
+      });
 
-    // Calculate TTL
-    const refreshTokenTTL = this.parseExpiryToSeconds(
-      AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
-    );
+      // Create refresh token with JTI embedded
+      const refreshToken: string = this.authUtilsService.createRefreshToken({
+        userId: user.id,
+        jti,
+      });
 
-    // Redis key with proper naming convention
-    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${user.id}:${jti}`;
+      // Hash the refresh token for secure storage (never store raw tokens)
+      const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
 
-    // Stored token data (with hash, not raw token)
-    const storedTokenData: IStoredRefreshToken = {
-      userId: user.id,
-      jti,
-      tokenHash, // Store hash, not raw token
-      ip,
-      userAgent,
-      device,
-      createdAt: new Date().toISOString(),
-    };
+      // Calculate TTL
+      const refreshTokenTTL = this.parseExpiryToSeconds(
+        AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
+      );
 
-    // Execute all async operations in parallel
-    await Promise.all([
-      // Store refresh token hash in Redis
-      this.redisService.set(refreshTokenKey, storedTokenData, refreshTokenTTL),
-      // Track session in user's session list
-      this.addUserSession(user.id, jti, refreshTokenTTL),
-      // Enforce max devices limit
-      this.enforceMaxDevices(user.id, AUTH_CONFIG.SESSION.MAX_DEVICES_PER_USER),
-      // Reset failed attempts on successful login
-      security
-        ? this.prismaService.authSecurity.update({
-            where: { id: security.id },
-            data: {
-              failedAttempts: 0,
-              lastFailedAt: null,
-              lockExpiresAt: null,
-            },
-          })
-        : Promise.resolve(),
-      // Log successful login (fire-and-forget)
-      this.logLoginAttempt({
-        authId: user.id,
+      // Redis key with proper naming convention
+      const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${user.id}:${jti}`;
+
+      // Stored token data (with hash, not raw token)
+      const storedTokenData: IStoredRefreshToken = {
+        userId: user.id,
+        jti,
+        tokenHash, // Store hash, not raw token
         ip,
         userAgent,
         device,
-        success: true,
-      }),
-    ]);
+        createdAt: new Date().toISOString(),
+      };
 
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        verified: user.verified,
-      },
-      expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
-    };
+      // Execute critical Redis operations with detailed error handling and rollback
+      try {
+        // CRITICAL: Store refresh token hash in Redis
+        await this.redisService.set(
+          refreshTokenKey,
+          storedTokenData,
+          refreshTokenTTL,
+        );
+      } catch (error) {
+        console.error('Failed to store refresh token in Redis:', {
+          userId: user.id,
+          jti,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw AppError.serviceUnavailable(
+          'Authentication service temporarily unavailable. Please try again.',
+        );
+      }
+
+      try {
+        // CRITICAL: Track session in user's session list
+        await this.addUserSession(user.id, jti, refreshTokenTTL);
+      } catch (error) {
+        console.error('Failed to add user session to Redis:', {
+          userId: user.id,
+          jti,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Rollback: Remove the refresh token we just stored
+        await this.redisService.del(refreshTokenKey).catch((rollbackError) => {
+          console.error('CRITICAL: Failed to rollback refresh token:', {
+            userId: user.id,
+            jti,
+            error:
+              rollbackError instanceof Error
+                ? rollbackError.message
+                : String(rollbackError),
+          });
+        });
+
+        throw AppError.serviceUnavailable(
+          'Authentication service temporarily unavailable. Please try again.',
+        );
+      }
+
+      // NON-CRITICAL: Enforce max devices (log but don't fail login)
+      try {
+        await this.enforceMaxDevices(
+          user.id,
+          AUTH_CONFIG.SESSION.MAX_DEVICES_PER_USER,
+        );
+      } catch (error) {
+        console.error('Failed to enforce max devices (non-critical):', {
+          userId: user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue - login still succeeds
+      }
+
+      // NON-CRITICAL: DB operations (fire-and-forget with detailed logging)
+      void Promise.allSettled([
+        security
+          ? this.prismaService.authSecurity.update({
+              where: { id: security.id },
+              data: {
+                failedAttempts: 0,
+                lastFailedAt: null,
+                lockExpiresAt: null,
+              },
+            })
+          : Promise.resolve(),
+        this.logLoginAttempt({
+          authId: user.id,
+          ip,
+          userAgent,
+          device,
+          success: true,
+        }),
+      ]).then((results) => {
+        results.forEach((result) => {
+          if (result.status === 'rejected') {
+            console.error('Non-critical login post-process failed:', result);
+          }
+        });
+      });
+
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          verified: user.verified,
+        },
+        expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
+      };
+    } finally {
+      // Always release the lock
+      await this.redisService.del(lockKey);
+    }
   }
 
   /**
