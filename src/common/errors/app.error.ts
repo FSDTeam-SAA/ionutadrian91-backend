@@ -50,6 +50,10 @@ class AppError extends HttpException {
   static tooManyRequests(message: string = 'Too Many Requests'): AppError {
     return new AppError(HttpStatus.TOO_MANY_REQUESTS, message);
   }
+
+  static serviceUnavailable(message: string = 'Service Unavailable'): AppError {
+    return new AppError(HttpStatus.SERVICE_UNAVAILABLE, message);
+  }
 }
 
 export default AppError;
