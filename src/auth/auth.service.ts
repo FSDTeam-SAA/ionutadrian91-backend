@@ -6,6 +6,7 @@ import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
 import { RedisService } from '../common/services/redis.service';
+import { EmailQueueService } from '../common/queues/email.queue';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
 import config from '../common/config/app.config';
@@ -16,7 +17,6 @@ import {
 } from './interfaces/auth.interface';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 
@@ -28,6 +28,7 @@ export class AuthService {
     private readonly activityLogService: ActivityLogService,
     private readonly emailService: EmailService,
     private readonly redisService: RedisService,
+    private readonly emailQueueService: EmailQueueService,
   ) {}
 
   async create(
@@ -158,27 +159,16 @@ export class AuthService {
       ttlSeconds,
     );
 
-    // Send verification email
+    // Queue verification email for async processing
     try {
-      await this.emailService.sendVerificationEmail(
+      await this.emailQueueService.sendVerificationEmail(
         email,
         username,
         verificationCode,
+        newUser.id,
       );
-
-      // Update email history status to 'sent'
-      await this.prismaService.emailHistory.updateMany({
-        where: {
-          authId: newUser.id,
-          emailType: 'verification',
-          emailStatus: 'pending',
-        },
-        data: {
-          emailStatus: 'sent',
-        },
-      });
     } catch (error) {
-      console.error('Failed to send verification email:', error);
+      console.error('Failed to queue verification email:', error);
       // Update email history status to 'failed'
       await this.prismaService.emailHistory.updateMany({
         where: {
@@ -189,7 +179,7 @@ export class AuthService {
         data: {
           emailStatus: 'failed',
           errorMessage:
-            error instanceof Error ? error.message : 'Failed to send email',
+            error instanceof Error ? error.message : 'Failed to queue email',
         },
       });
       // Don't throw error, user is created, just email failed
@@ -266,11 +256,15 @@ export class AuthService {
     // Delete verification code from Redis
     await this.redisService.del(verificationKey);
 
-    // Send welcome email
+    // Queue welcome email for async processing
     try {
-      await this.emailService.sendWelcomeEmail(email, user.username);
+      await this.emailQueueService.sendWelcomeEmail(
+        email,
+        user.username,
+        user.id,
+      );
     } catch (error) {
-      console.error('Failed to send welcome email:', error);
+      console.error('Failed to queue welcome email:', error);
       // Don't throw, verification is successful
     }
 
@@ -340,27 +334,16 @@ export class AuthService {
       },
     });
 
-    // Send verification email
+    // Queue verification email for async processing
     try {
-      await this.emailService.sendVerificationEmail(
+      await this.emailQueueService.sendVerificationEmail(
         email,
         user.username,
         verificationCode,
+        user.id,
       );
-
-      // Update email history status
-      await this.prismaService.emailHistory.updateMany({
-        where: {
-          authId: user.id,
-          emailType: 'verification',
-          emailStatus: 'pending',
-        },
-        data: {
-          emailStatus: 'sent',
-        },
-      });
     } catch (error) {
-      console.error('Failed to send verification email:', error);
+      console.error('Failed to queue verification email:', error);
       // Update email history status to 'failed'
       await this.prismaService.emailHistory.updateMany({
         where: {
@@ -371,7 +354,7 @@ export class AuthService {
         data: {
           emailStatus: 'failed',
           errorMessage:
-            error instanceof Error ? error.message : 'Failed to send email',
+            error instanceof Error ? error.message : 'Failed to queue email',
         },
       });
       throw AppError.badRequest('Failed to send verification email');
