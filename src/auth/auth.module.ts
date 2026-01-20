@@ -6,8 +6,10 @@ import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
 import { RedisService } from '../common/services/redis.service';
+import { QueueModule } from '../common/modules';
 
 @Module({
+  imports: [QueueModule],
   controllers: [AuthController],
   providers: [
     AuthService,
