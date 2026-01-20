@@ -65,3 +65,5 @@ nestjs-explore-with-ec2-pujon2.pem
 *.pem
 *.key
 *.crt
+
+docs
