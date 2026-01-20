@@ -3,8 +3,8 @@ import { Module } from '@nestjs/common';
 import config from '../config/app.config';
 import { EmailService } from '../services/email.service';
 import { PrismaService } from '../services/prisma.service';
-import { EmailProcessor } from './email.processor';
-import { EmailQueueService } from './email.queue';
+import { EmailQueueService } from '../queues/email/email.queue';
+import { EmailProcessor } from '../queues/email/email.processor';
 
 @Module({
   imports: [

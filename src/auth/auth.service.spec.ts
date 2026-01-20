@@ -5,7 +5,7 @@ import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
 import { RedisService } from '../common/services/redis.service';
-import { EmailQueueService } from '../common/queues/email.queue';
+import { EmailQueueService } from '../common/queues/email/email.queue';
 
 describe('AuthService', () => {
   let service: AuthService;

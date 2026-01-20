@@ -75,3 +75,41 @@ enum actionType {
     update
     delete
 }
+
+// ================================
+// Subscription Related Enums
+// ================================
+
+enum subscriptionStatus {
+    ACTIVE
+    PAST_DUE
+    CANCELED
+    TRIALING
+    INCOMPLETE
+    INCOMPLETE_EXPIRED
+    UNPAID
+}
+
+enum billingInterval {
+    DAY
+    WEEK
+    MONTH
+    YEAR
+}
+
+enum paymentStatus {
+    PENDING
+    PROCESSING
+    SUCCEEDED
+    FAILED
+    CANCELED
+    REFUNDED
+}
+
+enum invoiceStatus {
+    DRAFT
+    OPEN
+    PAID
+    VOID
+    UNCOLLECTIBLE
+}

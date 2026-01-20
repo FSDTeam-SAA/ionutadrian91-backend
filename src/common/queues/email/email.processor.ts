@@ -1,9 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { EmailService } from '../services/email.service';
-import { PrismaService } from '../services/prisma.service';
+// import { EmailService } from '../services/email.service';
+// import { PrismaService } from '../services/prisma.service';
 import { EmailJob } from './email.queue';
+import { EmailService } from 'src/common/services/email.service';
+import { PrismaService } from 'src/common/services/prisma.service';
 
 @Processor('email')
 export class EmailProcessor extends WorkerHost {

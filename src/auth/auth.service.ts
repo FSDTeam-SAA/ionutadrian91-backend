@@ -4,9 +4,8 @@ import { AuthUtilsService } from './services/auth-utils.service';
 import { AUTH_CONFIG } from './config/auth.config';
 import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
-import { EmailService } from '../common/services/email.service';
 import { RedisService } from '../common/services/redis.service';
-import { EmailQueueService } from '../common/queues/email.queue';
+import { EmailQueueService } from '../common/queues/email/email.queue';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
 import config from '../common/config/app.config';
@@ -26,7 +25,6 @@ export class AuthService {
     private readonly authUtilsService: AuthUtilsService,
     private readonly prismaService: PrismaService,
     private readonly activityLogService: ActivityLogService,
-    private readonly emailService: EmailService,
     private readonly redisService: RedisService,
     private readonly emailQueueService: EmailQueueService,
   ) {}

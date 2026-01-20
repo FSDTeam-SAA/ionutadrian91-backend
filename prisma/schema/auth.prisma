@@ -22,6 +22,7 @@ model authUser {
     loginHistory      loginHistory[]
     emailHistory      emailHistory[]
     activityLogEvents ActivityLogEvent[]
+    subscriptions     Subscription[]
 
     @@index([email, id, providerId])
     @@index([username])
