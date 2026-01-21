@@ -152,4 +152,134 @@ describe('AuthController', () => {
       });
     });
   });
+
+  describe('verifyEmail', () => {
+    it('should verify email with valid code', async () => {
+      const email = 'test@example.com';
+      const code = '123456';
+      const mockRequest = {
+        ip: '127.0.0.1',
+        headers: {
+          'user-agent': 'Jest Test Agent',
+        },
+      } as unknown as Request;
+
+      const mockResponse = { message: 'Email verified successfully' };
+      mockAuthService.verifyEmail.mockResolvedValue(mockResponse);
+
+      const result = await controller.verifyEmail(email, code, mockRequest);
+
+      expect(result).toEqual(mockResponse);
+      expect(mockAuthService.verifyEmail).toHaveBeenCalledWith(email, code, {
+        ip: '127.0.0.1',
+        userAgent: 'Jest Test Agent',
+      });
+      expect(mockAuthService.verifyEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle missing IP and user agent for verifyEmail', async () => {
+      const email = 'test@example.com';
+      const code = '123456';
+      const mockRequest = {
+        headers: {},
+      } as unknown as Request;
+
+      const mockResponse = { message: 'Email verified successfully' };
+      mockAuthService.verifyEmail.mockResolvedValue(mockResponse);
+
+      await controller.verifyEmail(email, code, mockRequest);
+
+      expect(mockAuthService.verifyEmail).toHaveBeenCalledWith(email, code, {
+        ip: 'unknown',
+        userAgent: 'unknown',
+      });
+    });
+
+    it('should handle service errors for verifyEmail', async () => {
+      const email = 'test@example.com';
+      const code = 'invalid';
+      const mockRequest = {
+        ip: '127.0.0.1',
+        headers: {
+          'user-agent': 'Jest Test Agent',
+        },
+      } as unknown as Request;
+
+      const error = new Error('Invalid verification code');
+      mockAuthService.verifyEmail.mockRejectedValue(error);
+
+      await expect(
+        controller.verifyEmail(email, code, mockRequest),
+      ).rejects.toThrow('Invalid verification code');
+      expect(mockAuthService.verifyEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('resendVerificationEmail', () => {
+    it('should resend verification email successfully', async () => {
+      const email = 'test@example.com';
+      const mockRequest = {
+        ip: '127.0.0.1',
+        headers: {
+          'user-agent': 'Jest Test Agent',
+        },
+      } as unknown as Request;
+
+      const mockResponse = { message: 'Verification email sent successfully' };
+      mockAuthService.resendVerificationEmail.mockResolvedValue(mockResponse);
+
+      const result = await controller.resendVerificationEmail(
+        email,
+        mockRequest,
+      );
+
+      expect(result).toEqual(mockResponse);
+      expect(mockAuthService.resendVerificationEmail).toHaveBeenCalledWith(
+        email,
+        {
+          ip: '127.0.0.1',
+          userAgent: 'Jest Test Agent',
+        },
+      );
+      expect(mockAuthService.resendVerificationEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle missing IP and user agent for resendVerificationEmail', async () => {
+      const email = 'test@example.com';
+      const mockRequest = {
+        headers: {},
+      } as unknown as Request;
+
+      const mockResponse = { message: 'Verification email sent successfully' };
+      mockAuthService.resendVerificationEmail.mockResolvedValue(mockResponse);
+
+      await controller.resendVerificationEmail(email, mockRequest);
+
+      expect(mockAuthService.resendVerificationEmail).toHaveBeenCalledWith(
+        email,
+        {
+          ip: 'unknown',
+          userAgent: 'unknown',
+        },
+      );
+    });
+
+    it('should handle service errors for resendVerificationEmail', async () => {
+      const email = 'test@example.com';
+      const mockRequest = {
+        ip: '127.0.0.1',
+        headers: {
+          'user-agent': 'Jest Test Agent',
+        },
+      } as unknown as Request;
+
+      const error = new Error('User not found');
+      mockAuthService.resendVerificationEmail.mockRejectedValue(error);
+
+      await expect(
+        controller.resendVerificationEmail(email, mockRequest),
+      ).rejects.toThrow('User not found');
+      expect(mockAuthService.resendVerificationEmail).toHaveBeenCalledTimes(1);
+    });
+  });
 });
