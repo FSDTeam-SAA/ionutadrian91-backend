@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { RedisModule } from './common/modules/redis.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -16,6 +17,8 @@ import { RedisModule } from './common/modules/redis.module';
     }),
     // Redis module (global - can be injected anywhere)
     RedisModule,
+    // Metrics module (global - Prometheus metrics)
+    MetricsModule,
     // BlogModule,
     AuthModule,
     UserModule,
