@@ -75,8 +75,11 @@ export class AuthService {
     }
 
     // Generate verification code
+    // Generate verification code
     const verificationCode = this.authUtilsService.generateVerificationCode();
-    const expiresAt = new Date(Date.now() + Number(VERIFICATION) * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + this.parseExpiryToSeconds(VERIFICATION) * 1000,
+    );
 
     // Hash password
     const saltRounds = 12;
@@ -301,7 +304,9 @@ export class AuthService {
 
     // Generate new verification code
     const verificationCode = this.authUtilsService.generateVerificationCode();
-    const expiresAt = new Date(Date.now() + Number(VERIFICATION) * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + this.parseExpiryToSeconds(VERIFICATION) * 1000,
+    );
 
     // Store new verification code in Redis
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
