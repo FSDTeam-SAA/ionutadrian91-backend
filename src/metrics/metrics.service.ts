@@ -38,16 +38,18 @@ export class MetricsService implements OnModuleInit {
     collectDefaultMetrics({ register: this.register });
 
     // HTTP request duration histogram
+    // for tracking request latencies
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     this.httpRequestDuration = new Histogram({
       name: 'http_request_duration_seconds',
       help: 'Duration of HTTP requests in seconds',
       labelNames: ['method', 'route', 'status_code'],
-      buckets: [0.1, 0.5, 1, 2, 5, 10],
+      buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10],
       registers: [this.register],
     });
 
     // HTTP request counter
+    // for request rate per second
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     this.httpRequestTotal = new Counter({
       name: 'http_requests_total',
@@ -57,6 +59,7 @@ export class MetricsService implements OnModuleInit {
     });
 
     // HTTP errors counter
+    // for tracking HTTP request errors
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     this.httpRequestErrors = new Counter({
       name: 'http_request_errors_total',
