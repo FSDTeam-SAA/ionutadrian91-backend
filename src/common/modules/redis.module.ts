@@ -1,17 +1,15 @@
-import {
-  Module,
-  Global,
-  OnModuleDestroy,
-  Inject,
-  Logger,
-} from '@nestjs/common';
+import { Module, Global, OnModuleDestroy, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis, { Redis as RedisType } from 'ioredis';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
 
 export const REDIS_CLIENT = Symbol('REDIS_CLIENT');
 
-const createRedisClient = (configService: ConfigService): RedisType => {
-  const logger = new Logger('RedisModule');
+const createRedisClient = (
+  configService: ConfigService,
+  logger: Logger,
+): RedisType => {
   const isProduction = configService.get('NODE_ENV') === 'production';
 
   const client = new Redis({
@@ -25,11 +23,17 @@ const createRedisClient = (configService: ConfigService): RedisType => {
     maxRetriesPerRequest: 3,
     retryStrategy: (times: number) => {
       if (times > 10) {
-        logger.error('Redis max connection retries reached. Stopping...');
+        logger.error('Redis max connection retries reached. Stopping...', {
+          context: 'RedisModule',
+        });
         return null;
       }
       const delay = Math.min(times * 100, 3000);
-      logger.warn(`Redis reconnecting in ${delay}ms (attempt ${times})`);
+      logger.warn(`Redis reconnecting in ${delay}ms (attempt ${times})`, {
+        context: 'RedisModule',
+        attempt: times,
+        delay,
+      });
       return delay;
     },
 
@@ -56,11 +60,24 @@ const createRedisClient = (configService: ConfigService): RedisType => {
   });
 
   // Event listeners for monitoring
-  client.on('error', (err) => logger.error(`Redis error: ${err.message}`));
-  client.on('connect', () => logger.log('Redis connecting...'));
-  client.on('ready', () => logger.log('Redis ready'));
-  client.on('close', () => logger.warn('Redis connection closed'));
-  client.on('reconnecting', () => logger.warn('Redis reconnecting...'));
+  client.on('error', (err) =>
+    logger.error(`Redis error: ${err.message}`, {
+      context: 'RedisModule',
+      error: err.message,
+    }),
+  );
+  client.on('connect', () =>
+    logger.info('Redis connecting...', { context: 'RedisModule' }),
+  );
+  client.on('ready', () =>
+    logger.info('Redis ready', { context: 'RedisModule' }),
+  );
+  client.on('close', () =>
+    logger.warn('Redis connection closed', { context: 'RedisModule' }),
+  );
+  client.on('reconnecting', () =>
+    logger.warn('Redis reconnecting...', { context: 'RedisModule' }),
+  );
 
   return client;
 };
@@ -71,21 +88,24 @@ const createRedisClient = (configService: ConfigService): RedisType => {
     {
       provide: REDIS_CLIENT,
       useFactory: createRedisClient,
-      inject: [ConfigService],
+      inject: [ConfigService, WINSTON_MODULE_PROVIDER],
     },
   ],
   exports: [REDIS_CLIENT],
 })
 export class RedisModule implements OnModuleDestroy {
-  private readonly logger = new Logger(RedisModule.name);
-
-  constructor(@Inject(REDIS_CLIENT) private readonly client: RedisType) {}
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly client: RedisType,
+    @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+  ) {}
 
   async onModuleDestroy(): Promise<void> {
     if (this.client) {
-      this.logger.log('Closing Redis connection...');
+      this.logger.info('Closing Redis connection...', {
+        context: 'RedisModule',
+      });
       await this.client.quit();
-      this.logger.log('Redis connection closed');
+      this.logger.info('Redis connection closed', { context: 'RedisModule' });
     }
   }
 }

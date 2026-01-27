@@ -7,6 +7,9 @@ import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { RedisModule } from './common/modules/redis.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { WinstonModule } from 'nest-winston';
+import { winstonConfig } from './common/config/winston.config';
+import { LoggerModule } from './common/modules/logger.module';
 
 @Module({
   imports: [
@@ -15,6 +18,10 @@ import { MetricsModule } from './metrics/metrics.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
+    // Winston logger module (global - can be injected anywhere)
+    WinstonModule.forRoot(winstonConfig),
+    // Custom logger module (global - can be injected anywhere)
+    LoggerModule,
     // Redis module (global - can be injected anywhere)
     RedisModule,
     // Metrics module (global - Prometheus metrics)

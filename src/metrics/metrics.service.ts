@@ -18,9 +18,6 @@ export class MetricsService implements OnModuleInit {
 
   // Custom business metrics
   public readonly activeUsers: Gauge;
-  public readonly databaseQueries: Counter;
-  public readonly cacheHits: Counter;
-  public readonly cacheMisses: Counter;
 
   constructor() {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
@@ -73,33 +70,6 @@ export class MetricsService implements OnModuleInit {
     this.activeUsers = new Gauge({
       name: 'active_users_total',
       help: 'Number of currently active users',
-      registers: [this.register],
-    });
-
-    // Database queries counter
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    this.databaseQueries = new Counter({
-      name: 'database_queries_total',
-      help: 'Total number of database queries',
-      labelNames: ['operation', 'model'],
-      registers: [this.register],
-    });
-
-    // Cache hits counter
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    this.cacheHits = new Counter({
-      name: 'cache_hits_total',
-      help: 'Total number of cache hits',
-      labelNames: ['cache_key'],
-      registers: [this.register],
-    });
-
-    // Cache misses counter
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    this.cacheMisses = new Counter({
-      name: 'cache_misses_total',
-      help: 'Total number of cache misses',
-      labelNames: ['cache_key'],
       registers: [this.register],
     });
   }
@@ -156,24 +126,6 @@ export class MetricsService implements OnModuleInit {
       status_code: statusCode.toString(),
       error_type: errorType,
     });
-  }
-
-  // Helper method to record database query
-  recordDatabaseQuery(operation: string, model: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    this.databaseQueries.inc({ operation, model });
-  }
-
-  // Helper method to record cache hit
-  recordCacheHit(cacheKey: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    this.cacheHits.inc({ cache_key: cacheKey });
-  }
-
-  // Helper method to record cache miss
-  recordCacheMiss(cacheKey: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-    this.cacheMisses.inc({ cache_key: cacheKey });
   }
 
   // Helper method to update active users

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import { Prisma } from '@prisma/client';
+import { CustomLoggerService } from './custom-logger.service';
 
 export interface ActivityLogMetadata {
   ip?: string;
@@ -17,7 +18,10 @@ export interface FieldChange {
 
 @Injectable()
 export class ActivityLogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly customLogger: CustomLoggerService,
+  ) {}
 
   /**
    * Log an activity event with field-level changes

@@ -1,6 +1,8 @@
-import { Injectable, Inject, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { Redis as RedisType } from 'ioredis';
 import { REDIS_CLIENT } from '../modules/redis.module';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
 
 /**
  * Redis Service - Production-grade caching service
@@ -14,9 +16,10 @@ import { REDIS_CLIENT } from '../modules/redis.module';
  */
 @Injectable()
 export class RedisService implements OnModuleInit {
-  private readonly logger = new Logger(RedisService.name);
-
-  constructor(@Inject(REDIS_CLIENT) private readonly client: RedisType) {}
+  constructor(
+    @Inject(REDIS_CLIENT) private readonly client: RedisType,
+    @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+  ) {}
 
   /**
    * Health check on service initialization
@@ -24,9 +27,14 @@ export class RedisService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     try {
       await this.ping();
-      this.logger.log('Redis health check passed');
+      this.logger.info('Redis health check passed', {
+        context: 'RedisService',
+      });
     } catch (error) {
-      this.logger.error('Redis health check failed', error);
+      this.logger.error('Redis health check failed', {
+        context: 'RedisService',
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -55,7 +63,11 @@ export class RedisService implements OnModuleInit {
       if (!data) return null;
       return JSON.parse(data) as T;
     } catch (error) {
-      this.logger.error(`Error getting key "${key}":`, error);
+      this.logger.error(`Error getting key "${key}"`, {
+        context: 'RedisService',
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -80,7 +92,11 @@ export class RedisService implements OnModuleInit {
       }
       return true;
     } catch (error) {
-      this.logger.error(`Error setting key "${key}":`, error);
+      this.logger.error(`Error setting key "${key}"`, {
+        context: 'RedisService',
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   }

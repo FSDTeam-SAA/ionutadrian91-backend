@@ -5,6 +5,7 @@ import * as path from 'path';
 import config from '../config/app.config';
 import AppError from '../errors/app.error';
 import httpStatus from 'http-status';
+import { CustomLoggerService } from './custom-logger.service';
 
 export interface EmailOptions {
   to: string;
@@ -17,7 +18,7 @@ export interface EmailOptions {
 export class EmailService {
   private transporter: nodemailer.Transporter;
 
-  constructor() {
+  constructor(private readonly customLogger: CustomLoggerService) {
     this.transporter = nodemailer.createTransport({
       host: String(config.email_host),
       port: Number(config.email_port),
@@ -33,6 +34,10 @@ export class EmailService {
    * Send an email
    */
   async sendEmail(options: EmailOptions): Promise<void> {
+    this.customLogger.log(
+      `Sending email to: ${options.to}, subject: ${options.subject}`,
+      'EmailService',
+    );
     const mailOptions = {
       from: String(config.email_from || config.email_user),
       to: options.to,
@@ -43,7 +48,16 @@ export class EmailService {
 
     try {
       await this.transporter.sendMail(mailOptions);
+      this.customLogger.log(
+        `Email sent successfully to: ${options.to}`,
+        'EmailService',
+      );
     } catch (error) {
+      this.customLogger.error(
+        `Error sending email to ${options.to}`,
+        error instanceof Error ? error.stack : undefined,
+        'EmailService',
+      );
       console.error('Error sending email:', error);
       throw AppError.badRequest('Email sending failed, something went wrong!');
     }

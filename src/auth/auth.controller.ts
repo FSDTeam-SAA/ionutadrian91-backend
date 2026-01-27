@@ -12,13 +12,21 @@ import { AuthService } from './auth.service';
 import { CreateAuthDto } from './dto/create-auth.dto';
 import { UpdateAuthDto } from './dto/update-auth.dto';
 import type { Request } from 'express';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly customLogger: CustomLoggerService,
+  ) {}
 
   @Post()
   create(@Body() payload: CreateAuthDto, @Req() req: Request) {
+    this.customLogger.log(
+      `Registration attempt for email: ${payload.email}`,
+      'AuthController',
+    );
     const meta = {
       ip: req.ip || 'unknown',
       userAgent: req.headers['user-agent'] || 'unknown',
@@ -42,6 +50,10 @@ export class AuthController {
     @Body('code') code: string,
     @Req() req: Request,
   ) {
+    this.customLogger.log(
+      `Email verification attempt for: ${email}`,
+      'AuthController',
+    );
     const meta = {
       ip: req.ip || 'unknown',
       userAgent: req.headers['user-agent'] || 'unknown',
