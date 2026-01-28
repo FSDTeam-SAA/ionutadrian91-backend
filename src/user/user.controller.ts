@@ -10,10 +10,14 @@ import {
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 
 @Controller('user')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly customLogger: CustomLoggerService,
+  ) {}
 
   @Post()
   create(@Body() createUserDto: CreateUserDto) {

@@ -51,9 +51,9 @@ services:
       # Redis configuration arguments
       # - save 60 1: RDB snapshot every 60s if at least 1 key changed
       # - maxmemory 256mb: Memory limit for cache
-      # - maxmemory-policy allkeys-lru: Evict least recently used keys when memory full
+      # - maxmemory-policy noeviction: Don't evict keys when memory full (required for BullMQ)
       # - appendonly yes: Enable AOF persistence for durability
-      - REDIS_ARGS=--save 60 1 --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+      - REDIS_ARGS=--save 60 1 --maxmemory 256mb --maxmemory-policy noeviction --appendonly yes
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -93,6 +93,8 @@ services:
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - blog_network
     restart: unless-stopped

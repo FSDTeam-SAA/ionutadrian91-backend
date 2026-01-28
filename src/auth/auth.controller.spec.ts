@@ -2,8 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthUtilsService } from './services/auth-utils.service';
+import { GoogleOAuthService } from './services/google-oauth.service';
 import { CreateAuthDto } from './dto/create-auth.dto';
 import type { Request } from 'express';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -24,6 +26,19 @@ describe('AuthController', () => {
     generateSecureId: jest.fn(),
   };
 
+  const mockGoogleOAuthService = {
+    getAuthorizationUrl: jest.fn(),
+    handleCallback: jest.fn(),
+    revokeGoogleToken: jest.fn(),
+  };
+
+  const mockCustomLoggerService = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
@@ -35,6 +50,14 @@ describe('AuthController', () => {
         {
           provide: AuthUtilsService,
           useValue: mockAuthUtilsService,
+        },
+        {
+          provide: GoogleOAuthService,
+          useValue: mockGoogleOAuthService,
+        },
+        {
+          provide: CustomLoggerService,
+          useValue: mockCustomLoggerService,
         },
       ],
     }).compile();

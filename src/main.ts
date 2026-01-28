@@ -1,15 +1,27 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exception.filter';
-import { ValidationPipe } from '@nestjs/common';
+import { LoggerService, ValidationPipe } from '@nestjs/common';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import {
+  WINSTON_MODULE_NEST_PROVIDER,
+  WINSTON_MODULE_PROVIDER,
+} from 'nest-winston';
+import { Logger } from 'winston';
 // import { AllExceptionFilter } from './common/filters/all-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
 
-  app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+  // Use Winston logger
+  const nestLogger = app.get<LoggerService>(WINSTON_MODULE_NEST_PROVIDER);
+  app.useLogger(nestLogger);
+
+  const winstonLogger = app.get<Logger>(WINSTON_MODULE_PROVIDER);
+  app.useGlobalFilters(new AllExceptionsFilter(winstonLogger));
+  app.useGlobalInterceptors(new TransformInterceptor(winstonLogger));
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -19,10 +31,14 @@ async function bootstrap() {
     }),
   );
 
-  console.log('Application is starting...');
+  nestLogger.log('Application is starting...', 'Bootstrap');
+
   await app.listen(process.env.PORT ?? 5000, '0.0.0.0');
 
-  console.log(`Application is running successfully on: ${await app.getUrl()}`);
+  nestLogger.log(
+    `Application is running successfully on: ${await app.getUrl()}`,
+    'Bootstrap',
+  );
 }
 bootstrap().catch((err) => {
   console.error('Error during bootstrap:', err);

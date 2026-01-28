@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
 import { AuthUtilsService } from './services/auth-utils.service';
@@ -6,6 +7,7 @@ import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { RedisService } from '../common/services/redis.service';
 import { EmailQueueService } from '../common/queues/email/email.queue';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
 import config from '../common/config/app.config';
@@ -27,6 +29,7 @@ export class AuthService {
     private readonly activityLogService: ActivityLogService,
     private readonly redisService: RedisService,
     private readonly emailQueueService: EmailQueueService,
+    private readonly customLogger: CustomLoggerService,
   ) {}
 
   async create(
@@ -35,6 +38,11 @@ export class AuthService {
   ): Promise<void> {
     const { email, password, username } = payload;
     const { ip, userAgent, device } = meta;
+
+    this.customLogger.log(
+      `Registration attempt for email: ${email}, username: ${username}`,
+      'AuthService',
+    );
 
     const { LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS } = AUTH_CONFIG.RATE_LIMIT;
     const { VERIFICATION } = AUTH_CONFIG.TOKEN_EXPIRY;
@@ -67,9 +75,17 @@ export class AuthService {
 
     if (existingUser) {
       if (existingUser.email === email) {
+        this.customLogger.warn(
+          `Registration failed: Email already exists - ${email}`,
+          'AuthService',
+        );
         throw AppError.conflict('Email already exists!');
       }
       if (existingUser.username === username) {
+        this.customLogger.warn(
+          `Registration failed: Username already exists - ${username}`,
+          'AuthService',
+        );
         throw AppError.conflict('Username already exists!');
       }
     }
@@ -168,7 +184,16 @@ export class AuthService {
         verificationCode,
         newUser.id,
       );
+      this.customLogger.log(
+        `User registered successfully: ${email}, verification email queued`,
+        'AuthService',
+      );
     } catch (error) {
+      this.customLogger.error(
+        `Failed to queue verification email for ${email}`,
+        error instanceof Error ? error.stack : undefined,
+        'AuthService',
+      );
       console.error('Failed to queue verification email:', error);
       // Update email history status to 'failed'
       await this.prismaService.emailHistory.updateMany({
@@ -196,6 +221,11 @@ export class AuthService {
     meta: { ip: string; userAgent: string },
   ): Promise<{ message: string }> {
     const { ip, userAgent } = meta;
+
+    this.customLogger.log(
+      `Email verification attempt for: ${email}`,
+      'AuthService',
+    );
     const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
 
     // Get verification data from Redis
@@ -207,6 +237,10 @@ export class AuthService {
     }>(verificationKey);
 
     if (!verificationData) {
+      this.customLogger.warn(
+        `Verification failed: Code expired or invalid for ${email}`,
+        'AuthService',
+      );
       throw AppError.badRequest(
         'Verification code expired or invalid. Please request a new code.',
       );
@@ -214,6 +248,10 @@ export class AuthService {
 
     // Validate code
     if (verificationData.code !== code) {
+      this.customLogger.warn(
+        `Verification failed: Invalid code for ${email}`,
+        'AuthService',
+      );
       throw AppError.badRequest('Invalid verification code');
     }
 
@@ -264,7 +302,16 @@ export class AuthService {
         user.username,
         user.id,
       );
+      this.customLogger.log(
+        `Email verified successfully for: ${email}, welcome email queued`,
+        'AuthService',
+      );
     } catch (error) {
+      this.customLogger.error(
+        `Verification successful but failed to queue welcome email for ${email}`,
+        error instanceof Error ? error.stack : undefined,
+        'AuthService',
+      );
       console.error('Failed to queue welcome email:', error);
       // Don't throw, verification is successful
     }
@@ -281,6 +328,11 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const { ip, userAgent } = meta;
     const { VERIFICATION } = AUTH_CONFIG.TOKEN_EXPIRY;
+
+    this.customLogger.log(
+      `Resend verification email requested for: ${email}`,
+      'AuthService',
+    );
 
     // Check rate limiting
     await this.authUtilsService.checkRateLimit(
@@ -403,6 +455,7 @@ export class AuthService {
         verified: true,
         status: true,
         provider: true,
+        tokenVersion: true,
         authSecurity: {
           select: {
             id: true,
@@ -537,13 +590,14 @@ export class AuthService {
       const accessToken: string = this.authUtilsService.createAccessToken({
         userId: user.id,
         role: user.role as unknown as UserRole,
+        tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
       });
 
       // Create refresh token with JTI embedded
-      const refreshToken: string = this.authUtilsService.createRefreshToken({
-        userId: user.id,
+      const refreshToken: string = this.authUtilsService.createRefreshToken(
+        { userId: user.id },
         jti,
-      });
+      );
 
       // Hash the refresh token for secure storage (never store raw tokens)
       const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
@@ -686,6 +740,12 @@ export class AuthService {
     let decoded: { userId: string; jti: string };
     try {
       const payload = this.authUtilsService.verifyRefreshToken(refreshToken);
+
+      // JTI comes from JWT standard claims (set via jwtid option)
+      if (!payload.jti) {
+        throw new Error('Missing JTI in token');
+      }
+
       decoded = {
         userId: payload.userId,
         jti: payload.jti,
@@ -724,7 +784,7 @@ export class AuthService {
     // Fetch user to get current role (may have changed)
     const user = await this.prismaService.authUser.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, status: true },
+      select: { id: true, role: true, status: true, tokenVersion: true },
     });
 
     if (!user || user.status !== 'ACTIVE') {
@@ -739,12 +799,13 @@ export class AuthService {
     const newAccessToken: string = this.authUtilsService.createAccessToken({
       userId: user.id,
       role: user.role as unknown as UserRole,
+      tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
     });
 
-    const newRefreshToken: string = this.authUtilsService.createRefreshToken({
-      userId: user.id,
-      jti: newJti,
-    });
+    const newRefreshToken: string = this.authUtilsService.createRefreshToken(
+      { userId: user.id },
+      newJti,
+    );
 
     const newTokenHash: string =
       this.authUtilsService.hashToken(newRefreshToken);
@@ -822,6 +883,8 @@ export class AuthService {
    */
   async logoutAllDevices(userId: string): Promise<{ message: string }> {
     await this.revokeAllUserTokens(userId);
+    // Increment tokenVersion to immediately invalidate all access tokens
+    await this.incrementTokenVersion(userId);
     return { message: 'Logged out from all devices successfully' };
   }
 
@@ -953,6 +1016,11 @@ export class AuthService {
         attemptNumber: newFailedAttempts,
       }),
     ]);
+
+    // On account lock, increment tokenVersion to immediately invalidate all access tokens
+    if (shouldLock) {
+      await this.incrementTokenVersion(userId);
+    }
   }
 
   /**
@@ -1016,5 +1084,29 @@ export class AuthService {
       default:
         return value;
     }
+  }
+
+  /**
+   * Increment token version for a user to immediately invalidate all access tokens.
+   * Called on security-critical events: password change, role change, admin block, force logout.
+   * Clears Redis cache to ensure AuthGuard will fetch new version from DB.
+   *
+   * @param userId - The user whose token version to increment
+   */
+  async incrementTokenVersion(userId: string): Promise<void> {
+    // Increment in database
+    await this.prismaService.authUser.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    // Invalidate Redis cache so next guard check fetches new version
+    const cacheKey = `${config.redis_cache_key_prefix}:token_version:${userId}`;
+    await this.redisService.del(cacheKey);
+
+    this.customLogger.log(`Token version incremented for user ${userId}, {
+      context: 'AuthService.incrementTokenVersion',
+      userId,
+    }`);
   }
 }

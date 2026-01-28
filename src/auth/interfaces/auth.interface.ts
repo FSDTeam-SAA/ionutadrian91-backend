@@ -11,20 +11,22 @@ export enum UserRole {
 
 /**
  * Access token payload - minimal for stateless auth
+ * tokenVersion enables immediate revocation without full DB lookup
  */
 export interface IAccessTokenPayload {
   userId: string;
   role: UserRole;
+  tokenVersion: number; // Incremented on security events (block, password change, etc.)
   iat?: number;
   exp?: number;
 }
 
 /**
- * Refresh token payload - includes JTI for revocation
+ * Refresh token payload - minimal data
+ * JTI is set via JWT standard claims, not in payload
  */
 export interface IRefreshTokenPayload {
   userId: string;
-  jti: string; // JWT ID - links to Redis for revocation
   iat?: number;
   exp?: number;
 }

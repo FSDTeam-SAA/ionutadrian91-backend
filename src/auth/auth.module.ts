@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { AuthUtilsService } from './services/auth-utils.service';
+import { GoogleOAuthService } from './services/google-oauth.service';
 import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { EmailService } from '../common/services/email.service';
@@ -14,11 +15,12 @@ import { QueueModule } from '../common/modules';
   providers: [
     AuthService,
     AuthUtilsService,
+    GoogleOAuthService,
     PrismaService,
     ActivityLogService,
     EmailService,
     RedisService,
   ],
-  exports: [AuthUtilsService],
+  exports: [AuthUtilsService, GoogleOAuthService],
 })
 export class AuthModule {}

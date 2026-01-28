@@ -11,6 +11,10 @@ interface AppConfig {
   email_user: string;
   email_pass: string;
   email_from: string;
+  // Google OAuth
+  google_client_id: string;
+  google_client_secret: string;
+  google_redirect_uri: string;
 }
 
 const config: AppConfig = {
@@ -26,6 +30,10 @@ const config: AppConfig = {
   email_user: process.env.EMAIL_USER || '',
   email_pass: process.env.EMAIL_PASS || '',
   email_from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+  // Google OAuth
+  google_client_id: process.env.GOOGLE_CLIENT_ID || '',
+  google_client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+  google_redirect_uri: process.env.GOOGLE_REDIRECT_URI || '',
 };
 
 export default config;

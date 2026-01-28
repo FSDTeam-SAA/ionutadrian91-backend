@@ -1,17 +1,17 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
-// import { EmailService } from '../services/email.service';
-// import { PrismaService } from '../services/prisma.service';
 import { EmailJob } from './email.queue';
 import { EmailService } from 'src/common/services/email.service';
 import { PrismaService } from 'src/common/services/prisma.service';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
 
 @Processor('email')
 export class EmailProcessor extends WorkerHost {
-  private readonly logger = new Logger(EmailProcessor.name);
-
   constructor(
+    @Inject(WINSTON_MODULE_PROVIDER)
+    private readonly logger: Logger,
     private readonly emailService: EmailService,
     private readonly prismaService: PrismaService,
   ) {
@@ -19,7 +19,11 @@ export class EmailProcessor extends WorkerHost {
   }
 
   async process(job: Job<EmailJob>): Promise<void> {
-    this.logger.log(`Processing email job: ${job.name} (ID: ${job.id})`);
+    this.logger.info(`Processing email job: ${job.name} (ID: ${job.id})`, {
+      context: 'EmailProcessor',
+      jobId: job.id,
+      jobName: job.name,
+    });
 
     try {
       switch (job.data.type) {
@@ -32,13 +36,16 @@ export class EmailProcessor extends WorkerHost {
         default:
           this.logger.warn(
             `Unknown email job type: ${String((job.data as { type?: string }).type || 'undefined')}`,
+            { context: 'EmailProcessor', jobId: job.id },
           );
       }
     } catch (error) {
-      this.logger.error(
-        `Failed to process email job ${job.id}:`,
-        error instanceof Error ? error.stack : error,
-      );
+      this.logger.error(`Failed to process email job ${job.id}`, {
+        context: 'EmailProcessor',
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       throw error; // Re-throw to trigger retry
     }
   }
@@ -67,15 +74,18 @@ export class EmailProcessor extends WorkerHost {
         },
       });
 
-      this.logger.log(
-        `Verification email sent successfully to ${email} (Job: ${job.id})`,
-      );
+      this.logger.info(`Verification email sent successfully to ${email}`, {
+        context: 'EmailProcessor',
+        jobId: job.id,
+        email,
+      });
     } catch (error) {
-      this.logger.error(
-        `Failed to send verification email to ${email}:`,
-        error,
-      );
-
+      this.logger.error(`Failed to send verification email to ${email}`, {
+        context: 'EmailProcessor',
+        email,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       // Update email history status to 'failed'
       await this.prismaService.emailHistory.updateMany({
         where: {
@@ -100,11 +110,17 @@ export class EmailProcessor extends WorkerHost {
 
     try {
       await this.emailService.sendWelcomeEmail(email, username);
-      this.logger.log(
-        `Welcome email sent successfully to ${email} (Job: ${job.id})`,
-      );
+      this.logger.info(`Welcome email sent successfully to ${email}`, {
+        context: 'EmailProcessor',
+        jobId: job.id,
+        email,
+      });
     } catch (error) {
-      this.logger.error(`Failed to send welcome email to ${email}:`, error);
+      this.logger.error(`Failed to send welcome email to ${email}`, {
+        context: 'EmailProcessor',
+        email,
+        error: error instanceof Error ? error.message : String(error),
+      });
       // Don't throw for welcome emails - they're non-critical
       // Just log the error and mark job as complete
     }
