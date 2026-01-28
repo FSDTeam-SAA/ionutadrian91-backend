@@ -11,6 +11,7 @@ export const GOOGLE_OAUTH_CONFIG = {
     USERINFO: 'https://www.googleapis.com/oauth2/v3/userinfo',
     TOKEN_INFO: 'https://oauth2.googleapis.com/tokeninfo',
     REVOKE: 'https://oauth2.googleapis.com/revoke',
+    JWKS: 'https://www.googleapis.com/oauth2/v3/certs',
   },
 
   // OAuth 2.0 Scopes

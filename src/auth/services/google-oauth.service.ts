@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
+import { JwksClient } from 'jwks-rsa';
 import { CustomLoggerService } from '../../common/services/custom-logger.service';
 import { RedisService } from '../../common/services/redis.service';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -22,16 +24,15 @@ import AppError from '../../common/errors/app.error';
 import config from '../../common/config/app.config';
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
 /**
  * Google OAuth Service
  * Implements Google OAuth 2.0 with PKCE (Proof Key for Code Exchange)
- * Following industry best practices for security
  */
 @Injectable()
 export class GoogleOAuthService {
   private readonly context = 'GoogleOAuthService';
+  private readonly jwksClient: JwksClient;
 
   constructor(
     private readonly customLogger: CustomLoggerService,
@@ -39,7 +40,17 @@ export class GoogleOAuthService {
     private readonly prismaService: PrismaService,
     private readonly activityLogService: ActivityLogService,
     private readonly authUtilsService: AuthUtilsService,
-  ) {}
+  ) {
+    // Initialize JWKS client for Google public key retrieval
+    // Keys are cached and automatically rotated
+    this.jwksClient = new JwksClient({
+      jwksUri: GOOGLE_OAUTH_CONFIG.ENDPOINTS.JWKS,
+      cache: true,
+      cacheMaxAge: 86400000, // 24 hours
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    });
+  }
 
   /**
    * Generate a cryptographically secure random state token
@@ -78,63 +89,87 @@ export class GoogleOAuthService {
   }
 
   /**
-   * Decode and validate Google ID token (JWT)
-   * Note: In production, you should verify the signature using Google's public keys
+   * Get Google's public signing key for ID token verification
+   * Keys are cached and automatically rotated by JWKS client
    */
-  private decodeIdToken(idToken: string): IGoogleIdTokenClaims | null {
-    console.log('idToken', idToken);
+  private async getGooglePublicKey(kid: string): Promise<string> {
     try {
-      const parts = idToken.split('.');
-      if (parts.length !== 3) {
-        return null;
-      }
-
-      console.log('token parts', parts);
-
-      const payload = JSON.parse(
-        Buffer.from(parts[1], 'base64url').toString('utf-8'),
-      );
-
-      console.log('payload', payload);
-
-      // Validate required claims
-      const { clientId } = getGoogleOAuthCredentials();
-
-      // Verify issuer
-      if (
-        payload.iss !== 'accounts.google.com' &&
-        payload.iss !== 'https://accounts.google.com'
-      ) {
-        this.customLogger.warn(
-          `Invalid ID token issuer: ${payload.iss}`,
-          this.context,
-        );
-        return null;
-      }
-
-      // Verify audience
-      if (payload.aud !== clientId) {
-        this.customLogger.warn(
-          `Invalid ID token audience: ${payload.aud}`,
-          this.context,
-        );
-        return null;
-      }
-
-      // Verify expiration
-      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-        this.customLogger.warn('ID token has expired', this.context);
-        return null;
-      }
-
-      return payload as IGoogleIdTokenClaims;
+      const key = await this.jwksClient.getSigningKey(kid);
+      return key.getPublicKey();
     } catch (error) {
       this.customLogger.error(
-        'Failed to decode ID token',
+        `Failed to fetch Google public key: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,
         this.context,
       );
-      return null;
+      throw AppError.unauthorized('Failed to verify ID token signature');
+    }
+  }
+
+  /**
+   * Verify and decode Google ID token with signature verification
+   * Production-ready implementation using Google's public keys (JWKS)
+   *
+   * This ensures:
+   * 1. The token was actually signed by Google (not forged)
+   * 2. The token hasn't been tampered with
+   * 3. The token is for our application (audience check)
+   * 4. The token hasn't expired
+   * 5. The token is from the correct issuer (Google)
+   */
+  private async verifyIdToken(idToken: string): Promise<IGoogleIdTokenClaims> {
+    try {
+      const { clientId } = getGoogleOAuthCredentials();
+
+      // Decode header to get 'kid' (Key ID) - which public key to use
+      const decoded = jwt.decode(idToken, { complete: true });
+
+      if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+        throw new Error('Invalid token format or missing kid');
+      }
+
+      // Fetch Google's public key using the kid from token header
+      const publicKey = await this.getGooglePublicKey(decoded.header.kid);
+
+      // Verify signature and validate claims in one step
+      const payload = jwt.verify(idToken, publicKey, {
+        algorithms: ['RS256'], // Google uses RS256 (RSA with SHA-256)
+        issuer: ['accounts.google.com', 'https://accounts.google.com'],
+        audience: clientId, // Ensures token is for our app
+        clockTolerance: 60, // Allow 60 seconds clock skew
+      }) as IGoogleIdTokenClaims;
+
+      // Additional validation for email verification
+      if (!payload.email_verified) {
+        throw new Error('Email not verified by Google');
+      }
+
+      this.customLogger.log(
+        `ID token verified successfully for: ${payload.email}`,
+        this.context,
+      );
+
+      return payload;
+    } catch (error) {
+      if (error instanceof jwt.TokenExpiredError) {
+        this.customLogger.warn('ID token expired', this.context);
+        throw AppError.unauthorized('ID token has expired');
+      }
+
+      if (error instanceof jwt.JsonWebTokenError) {
+        this.customLogger.warn(
+          `Invalid ID token: ${error.message}`,
+          this.context,
+        );
+        throw AppError.unauthorized('Invalid ID token signature');
+      }
+
+      this.customLogger.error(
+        'Failed to verify ID token',
+        error instanceof Error ? error.stack : undefined,
+        this.context,
+      );
+      throw AppError.unauthorized('Failed to verify ID token');
     }
   }
 
@@ -296,12 +331,13 @@ export class GoogleOAuthService {
       stateData.codeVerifier,
     );
 
-    // Try to extract user info from ID token first (more secure)
+    // Extract user info from ID token with signature verification (most secure)
     let googleUser: IGoogleUserInfo | null = null;
 
     if (tokenResponse.id_token) {
-      const idTokenClaims = this.decodeIdToken(tokenResponse.id_token);
-      if (idTokenClaims) {
+      try {
+        // Verify token signature using Google's public keys
+        const idTokenClaims = await this.verifyIdToken(tokenResponse.id_token);
         googleUser = {
           sub: idTokenClaims.sub,
           email: idTokenClaims.email,
@@ -311,11 +347,20 @@ export class GoogleOAuthService {
           family_name: idTokenClaims.family_name,
           picture: idTokenClaims.picture,
         };
+      } catch (error) {
+        // Signature verification failed - do NOT fallback to userinfo
+        // This is a security violation
+        this.customLogger.error(
+          'ID token verification failed - possible forgery attempt',
+          error instanceof Error ? error.stack : undefined,
+          this.context,
+        );
+        throw AppError.unauthorized(
+          'Failed to verify ID token. Please try again.',
+        );
       }
-    }
-
-    // Fallback to userinfo endpoint if ID token parsing failed
-    if (!googleUser) {
+    } else {
+      // No ID token provided, fallback to userinfo endpoint
       googleUser = await this.getUserInfo(tokenResponse.access_token);
     }
 
