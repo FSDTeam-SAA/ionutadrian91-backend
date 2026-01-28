@@ -82,15 +82,20 @@ export class GoogleOAuthService {
    * Note: In production, you should verify the signature using Google's public keys
    */
   private decodeIdToken(idToken: string): IGoogleIdTokenClaims | null {
+    console.log('idToken', idToken);
     try {
       const parts = idToken.split('.');
       if (parts.length !== 3) {
         return null;
       }
 
+      console.log('token parts', parts);
+
       const payload = JSON.parse(
         Buffer.from(parts[1], 'base64url').toString('utf-8'),
       );
+
+      console.log('payload', payload);
 
       // Validate required claims
       const { clientId } = getGoogleOAuthCredentials();
@@ -368,6 +373,7 @@ export class GoogleOAuthService {
         status: true,
         provider: true,
         providerId: true,
+        tokenVersion: true,
       },
     });
 
@@ -422,6 +428,7 @@ export class GoogleOAuthService {
             status: true,
             provider: true,
             providerId: true,
+            tokenVersion: true,
           },
         });
 
@@ -500,6 +507,7 @@ export class GoogleOAuthService {
       email: string;
       username: string;
       role: string;
+      tokenVersion: number;
       verified: boolean;
       provider: string;
       providerId: string | null;
@@ -527,6 +535,7 @@ export class GoogleOAuthService {
       const accessToken = this.authUtilsService.createAccessToken({
         userId: user.id,
         role: user.role as unknown as UserRole,
+        tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
       });
 
       // Create refresh token with JTI

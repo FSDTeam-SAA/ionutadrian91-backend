@@ -11,10 +11,12 @@ export enum UserRole {
 
 /**
  * Access token payload - minimal for stateless auth
+ * tokenVersion enables immediate revocation without full DB lookup
  */
 export interface IAccessTokenPayload {
   userId: string;
   role: UserRole;
+  tokenVersion: number; // Incremented on security events (block, password change, etc.)
   iat?: number;
   exp?: number;
 }

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Injectable } from '@nestjs/common';
 import { CreateAuthDto } from './dto/create-auth.dto';
 import { AuthUtilsService } from './services/auth-utils.service';
@@ -454,6 +455,7 @@ export class AuthService {
         verified: true,
         status: true,
         provider: true,
+        tokenVersion: true,
         authSecurity: {
           select: {
             id: true,
@@ -588,6 +590,7 @@ export class AuthService {
       const accessToken: string = this.authUtilsService.createAccessToken({
         userId: user.id,
         role: user.role as unknown as UserRole,
+        tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
       });
 
       // Create refresh token with JTI embedded
@@ -781,7 +784,7 @@ export class AuthService {
     // Fetch user to get current role (may have changed)
     const user = await this.prismaService.authUser.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, status: true },
+      select: { id: true, role: true, status: true, tokenVersion: true },
     });
 
     if (!user || user.status !== 'ACTIVE') {
@@ -796,6 +799,7 @@ export class AuthService {
     const newAccessToken: string = this.authUtilsService.createAccessToken({
       userId: user.id,
       role: user.role as unknown as UserRole,
+      tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
     });
 
     const newRefreshToken: string = this.authUtilsService.createRefreshToken(
@@ -879,6 +883,8 @@ export class AuthService {
    */
   async logoutAllDevices(userId: string): Promise<{ message: string }> {
     await this.revokeAllUserTokens(userId);
+    // Increment tokenVersion to immediately invalidate all access tokens
+    await this.incrementTokenVersion(userId);
     return { message: 'Logged out from all devices successfully' };
   }
 
@@ -1010,6 +1016,11 @@ export class AuthService {
         attemptNumber: newFailedAttempts,
       }),
     ]);
+
+    // On account lock, increment tokenVersion to immediately invalidate all access tokens
+    if (shouldLock) {
+      await this.incrementTokenVersion(userId);
+    }
   }
 
   /**
@@ -1073,5 +1084,29 @@ export class AuthService {
       default:
         return value;
     }
+  }
+
+  /**
+   * Increment token version for a user to immediately invalidate all access tokens.
+   * Called on security-critical events: password change, role change, admin block, force logout.
+   * Clears Redis cache to ensure AuthGuard will fetch new version from DB.
+   *
+   * @param userId - The user whose token version to increment
+   */
+  async incrementTokenVersion(userId: string): Promise<void> {
+    // Increment in database
+    await this.prismaService.authUser.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+
+    // Invalidate Redis cache so next guard check fetches new version
+    const cacheKey = `${config.redis_cache_key_prefix}:token_version:${userId}`;
+    await this.redisService.del(cacheKey);
+
+    this.customLogger.log(`Token version incremented for user ${userId}, {
+      context: 'AuthService.incrementTokenVersion',
+      userId,
+    }`);
   }
 }

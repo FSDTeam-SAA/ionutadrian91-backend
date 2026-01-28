@@ -4,23 +4,27 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import config from '../config/app.config';
+import { RedisService } from '../services/redis.service';
+import { PrismaService } from '../services/prisma.service';
 
-/**
- * Auth Guard - Validates JWT access tokens (truly stateless)
- *
- * Best Practice: Access tokens are stateless - NO Redis/DB lookup needed
- * - Verified by JWT signature only
- * - Contains minimal payload: { userId, role }
- * - Short-lived (15 min) for security
- * - Refresh token handles revocation
- */
+interface IAccessTokenPayload {
+  userId: string;
+  role: string;
+  tokenVersion: number;
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
+  constructor(
+    private readonly redisService: RedisService,
+    private readonly prismaService: PrismaService,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
@@ -28,15 +32,22 @@ export class AuthGuard implements CanActivate {
     }
 
     try {
-      // Verify JWT signature and expiry (STATELESS - no DB/Redis lookup)
-      // This is the ONLY check needed for access tokens
-      const payload = jwt.verify(token, config.jwt_access_secret!) as {
-        userId: string;
-        role: string;
-      };
+      const payload = jwt.verify(
+        token,
+        config.jwt_access_secret,
+      ) as IAccessTokenPayload;
+
+      // Step 2: Check tokenVersion (hybrid - Redis first, DB fallback)
+      const currentVersion = await this.getTokenVersion(payload.userId);
+
+      if (currentVersion !== payload.tokenVersion) {
+        throw new UnauthorizedException(
+          'Token has been revoked. Please login again.',
+        );
+      }
 
       // Attach user to request for downstream use
-      request['user'] = payload;
+      Object.assign(request, { user: payload });
 
       return true;
     } catch (error) {
@@ -46,8 +57,45 @@ export class AuthGuard implements CanActivate {
       if (error instanceof jwt.JsonWebTokenError) {
         throw new UnauthorizedException('Invalid token');
       }
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Authentication failed');
     }
+  }
+
+  /**
+   * Get token version with Redis cache
+   * Fast path: Redis lookup (~1-2ms)
+   * Slow path: DB lookup + cache (~10-20ms, only on cache miss)
+   */
+  private async getTokenVersion(userId: string): Promise<number> {
+    const cacheKey = `${config.redis_cache_key_prefix}:token_version:${userId}`;
+
+    // Try Redis first (fast path - most common)
+    const cachedVersion = await this.redisService.get<number>(cacheKey);
+    if (cachedVersion !== null && cachedVersion !== undefined) {
+      return cachedVersion;
+    }
+
+    // Fallback to DB (slow path - only on cache miss)
+    const user = await this.prismaService.authUser.findUnique({
+      where: { id: userId },
+      select: { tokenVersion: true, status: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('User account is not active');
+    }
+
+    // Cache for 1 hour (or until security event invalidates it)
+    await this.redisService.set(cacheKey, user.tokenVersion, 3600);
+
+    return user.tokenVersion as number;
   }
 
   /**
@@ -68,6 +116,7 @@ export class AuthGuard implements CanActivate {
    * Extract token from cookies (alternative method)
    */
   private extractTokenFromCookies(request: Request): string | undefined {
-    return request.cookies?.['accessToken'];
+    const cookies = request.cookies as Record<string, string> | undefined;
+    return cookies?.accessToken;
   }
 }
