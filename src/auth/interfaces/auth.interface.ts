@@ -20,11 +20,11 @@ export interface IAccessTokenPayload {
 }
 
 /**
- * Refresh token payload - includes JTI for revocation
+ * Refresh token payload - minimal data
+ * JTI is set via JWT standard claims, not in payload
  */
 export interface IRefreshTokenPayload {
   userId: string;
-  jti: string; // JWT ID - links to Redis for revocation
   iat?: number;
   exp?: number;
 }

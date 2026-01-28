@@ -5,6 +5,7 @@ import { PrismaService } from '../common/services/prisma.service';
 import { ActivityLogService } from '../common/services/activity-log.service';
 import { RedisService } from '../common/services/redis.service';
 import { EmailQueueService } from '../common/queues/email/email.queue';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 import AppError from '../common/errors/app.error';
 import * as bcrypt from 'bcryptjs';
 
@@ -109,6 +110,14 @@ describe('AuthService', () => {
       sendWelcomeEmail: jest.fn(),
     };
 
+    const mockCustomLoggerService = {
+      log: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      verbose: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -131,6 +140,10 @@ describe('AuthService', () => {
         {
           provide: EmailQueueService,
           useValue: mockEmailQueueService,
+        },
+        {
+          provide: CustomLoggerService,
+          useValue: mockCustomLoggerService,
         },
       ],
     }).compile();

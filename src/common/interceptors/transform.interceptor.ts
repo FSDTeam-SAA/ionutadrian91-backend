@@ -13,10 +13,11 @@ import { Logger } from 'winston';
 
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, any> {
+  private readonly defaultMessage: string = 'Success';
+  private readonly defaultStatusCode = 200;
+
   constructor(
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-    private defaultMessage: string = 'Success',
-    private defaultStatusCode = 200,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler<T>): Observable<any> {

@@ -591,10 +591,10 @@ export class AuthService {
       });
 
       // Create refresh token with JTI embedded
-      const refreshToken: string = this.authUtilsService.createRefreshToken({
-        userId: user.id,
+      const refreshToken: string = this.authUtilsService.createRefreshToken(
+        { userId: user.id },
         jti,
-      });
+      );
 
       // Hash the refresh token for secure storage (never store raw tokens)
       const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
@@ -737,6 +737,12 @@ export class AuthService {
     let decoded: { userId: string; jti: string };
     try {
       const payload = this.authUtilsService.verifyRefreshToken(refreshToken);
+
+      // JTI comes from JWT standard claims (set via jwtid option)
+      if (!payload.jti) {
+        throw new Error('Missing JTI in token');
+      }
+
       decoded = {
         userId: payload.userId,
         jti: payload.jti,
@@ -792,10 +798,10 @@ export class AuthService {
       role: user.role as unknown as UserRole,
     });
 
-    const newRefreshToken: string = this.authUtilsService.createRefreshToken({
-      userId: user.id,
-      jti: newJti,
-    });
+    const newRefreshToken: string = this.authUtilsService.createRefreshToken(
+      { userId: user.id },
+      newJti,
+    );
 
     const newTokenHash: string =
       this.authUtilsService.hashToken(newRefreshToken);

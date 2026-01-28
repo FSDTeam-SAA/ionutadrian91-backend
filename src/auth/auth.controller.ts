@@ -3,18 +3,15 @@ import {
   Get,
   Post,
   Body,
-  Patch,
-  Param,
-  Delete,
   Req,
   Query,
   Res,
-  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
 import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+// import { UpdateAuthDto } from './dto/update-auth.dto';
 import {
   GoogleOAuthInitDto,
   GoogleOAuthCallbackDto,
@@ -131,11 +128,16 @@ export class AuthController {
     @Query('error') error: string,
     @Query('error_description') errorDescription: string,
     @Req() req: Request,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     @Res({ passthrough: true }) res: Response,
   ) {
     // Handle OAuth errors
     if (error) {
       this.customLogger.warn(
+        `Google OAuth error: ${error} - ${errorDescription}`,
+        'AuthController',
+      );
+      Logger.warn(
         `Google OAuth error: ${error} - ${errorDescription}`,
         'AuthController',
       );
@@ -158,6 +160,7 @@ export class AuthController {
     }
 
     this.customLogger.log('Google OAuth callback received', 'AuthController');
+    Logger.log('Google OAuth callback received', 'AuthController');
 
     const meta = {
       ip: req.ip || 'unknown',
@@ -180,6 +183,19 @@ export class AuthController {
       meta,
     );
 
+    // If redirectUrl is provided, redirect to it with tokens as query params
+    if (result.redirectUrl) {
+      const redirectUrl = new URL(result.redirectUrl);
+      redirectUrl.searchParams.set('access_token', result.accessToken);
+      redirectUrl.searchParams.set('refresh_token', result.refreshToken);
+      redirectUrl.searchParams.set('user_id', result.user.id);
+      redirectUrl.searchParams.set('email', result.user.email);
+      redirectUrl.searchParams.set('is_new_user', result.isNewUser.toString());
+
+      return res.redirect(redirectUrl.toString());
+    }
+
+    // Otherwise return JSON response
     return {
       success: true,
       message: result.isNewUser
@@ -315,16 +331,13 @@ export class AuthController {
   @Post('logout')
   async logout(
     @Body('refreshToken') refreshToken: string,
+    @Body('userId') userId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     @Req() req: Request,
   ) {
     this.customLogger.log('Logout requested', 'AuthController');
 
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-    };
-
-    const result = await this.authService.logout(refreshToken, meta);
+    const result = await this.authService.logout(refreshToken, userId);
 
     return {
       success: true,

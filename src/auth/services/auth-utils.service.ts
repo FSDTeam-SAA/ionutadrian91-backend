@@ -78,6 +78,7 @@ export class AuthUtilsService {
    */
   createRefreshToken(
     payload: IRefreshTokenPayload,
+    jti: string,
     expiresIn?: SignOptions['expiresIn'],
   ): string {
     const secret = config.jwt_refresh_secret;
@@ -91,7 +92,7 @@ export class AuthUtilsService {
     const signOptions: SignOptions = {
       expiresIn: expiresIn || AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
       algorithm: 'HS256',
-      jwtid: payload.jti, // Embed JTI in JWT standard claim
+      jwtid: jti, // Embed JTI in JWT standard claim
     };
 
     return jwt.sign(payload, secret, signOptions);

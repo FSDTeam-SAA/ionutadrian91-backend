@@ -1,12 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthUtilsService } from './auth-utils.service';
+import { RedisService } from '../../common/services/redis.service';
 
 describe('AuthUtilsService', () => {
   let service: AuthUtilsService;
 
+  const mockRedisService = {
+    set: jest.fn(),
+    get: jest.fn(),
+    del: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AuthUtilsService],
+      providers: [
+        AuthUtilsService,
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
+        },
+      ],
     }).compile();
 
     service = module.get<AuthUtilsService>(AuthUtilsService);
