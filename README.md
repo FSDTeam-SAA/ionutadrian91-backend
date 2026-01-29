@@ -129,58 +129,6 @@ This isn't just another boilerplate—it's a **battle-tested, production-grade f
 
 ---
 
-## 🏗 Architecture Overview
-
-```mermaid
-flowchart TB
-    subgraph Monitoring["📊 Monitoring Layer"]
-        Grafana["Grafana :3000"]
-        Prometheus["Prometheus :9090"]
-        Loki["Loki :3100"]
-        Prometheus --> Grafana
-        Loki --> Grafana
-    end
-
-    subgraph App["🚀 Application Layer - NestJS"]
-        Client["Client Request"]
-        Guards["Guards (Auth)"]
-        Pipes["Pipes (Validation)"]
-        Handlers["Handlers (Controllers)"]
-        Services["Services (Business Logic)"]
-        Interceptors["Interceptors (Response/Metrics)"]
-        
-        Client --> Guards --> Pipes --> Handlers --> Services --> Interceptors
-    end
-
-    subgraph Data["💾 Data Layer"]
-        PostgreSQL[("PostgreSQL\n• AuthUser\n• AuthSecurity\n• Subscription\n• Payment")]
-        Prisma["Prisma ORM"]
-        Prisma --> PostgreSQL
-    end
-
-    subgraph Cache["⚡ Cache & Queue Layer"]
-        Redis[("Redis Stack\n• Sessions\n• Token Cache\n• Rate Limiting\n• Distributed Locks")]
-        BullMQ["BullMQ\n(Email Jobs)"]
-        Redis --> BullMQ
-    end
-
-    Services --> Prisma
-    Services --> Redis
-    Guards --> Redis
-    Interceptors -.->|metrics| Prometheus
-    Services -.->|logs| Loki
-```
-
-### Request Flow
-
-1. **Request arrives** → AuthGuard validates JWT token
-2. **Token validation** → Checks tokenVersion in Redis (cache hit) or DB (cache miss)
-3. **Validation Pipe** → Validates request body with class-validator
-4. **Service Layer** → Business logic execution
-5. **Transform Interceptor** → Standardizes response format
-6. **Metrics Interceptor** → Records request duration/status
-
----
 
 ## 📁 Project Structure
 
@@ -289,6 +237,11 @@ nestjs-prisma-postgres-starter/
 6. **Run database migrations**
    ```bash
    npx prisma migrate dev
+   ```
+
+7. **Generate Prisma client**
+   ```bash
+   npx prisma generate
    ```
 
 7. **Start the application**
@@ -406,7 +359,7 @@ sequenceDiagram
     A->>A: Hash password (bcrypt, 12 rounds)
     A->>DB: Create user + security record (transaction)
     A->>A: Generate 6-digit verification code
-    A->>R: Store code (24h TTL)
+    A->>R: Store code
     A->>Q: Queue verification email
     A-->>C: 201 Created
     
@@ -478,6 +431,92 @@ sequenceDiagram
     A->>R: Store new refresh token
     A-->>C: 200 OK (new tokens)
 ```
+
+### Google OAuth Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Auth API
+    participant G as Google OAuth
+    participant R as Redis
+    participant DB as PostgreSQL
+
+    C->>A: GET /auth/google?redirectUrl=...
+    A->>A: Generate state token (CSRF protection)
+    A->>R: Store state with metadata (5 min TTL)
+    A-->>C: Return Google authorization URL
+
+    C->>G: Redirect to Google consent screen
+    G->>G: User authenticates & consents
+    G->>A: GET /auth/google/callback?code=...&state=...
+
+    A->>R: Validate state token (CSRF check)
+    A->>G: Exchange code for tokens
+    G-->>A: Return access_token, id_token
+    A->>G: Fetch user profile from id_token
+    
+    alt New User
+        A->>DB: Create user with provider=google
+        A->>DB: Mark as verified (Google verified email)
+    else Existing User
+        A->>DB: Update last login
+    end
+
+    A->>A: Generate JWT access token
+    A->>A: Generate refresh token with JTI
+    A->>R: Store refresh token hash
+    A-->>C: Redirect to frontend with tokens
+```
+
+### Auth Guard & Authorization Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as AuthGuard
+    participant R as Redis
+    participant DB as PostgreSQL
+    participant Ctrl as Controller
+
+    C->>G: Request with Authorization
+    G->>G: Extract token from header
+    
+    alt No token provided
+        G-->>C: 401 Unauthorized - No token found
+    end
+
+    G->>G: Verify JWT signature & expiry
+    
+    alt Invalid/Expired token
+        G-->>C: 401 Unauthorized - Invalid token
+    end
+
+    G->>G: Extract userId, role, tokenVersion from JWT
+    
+    Note over G,R: Hybrid Token Validation
+    G->>R: GET tokenVersion from cache
+    
+    alt Cache hit
+        G->>G: Compare tokenVersion
+    else Cache miss
+        G->>DB: Fetch user tokenVersion & status
+        G->>R: Cache tokenVersion 
+    end
+
+    alt tokenVersion mismatch
+        G-->>C: 401 Unauthorized - Token revoked
+    end
+
+    alt User status != ACTIVE
+        G-->>C: 401 Unauthorized - Account inactive
+    end
+
+    G->>G: Attach user payload to request
+    G->>Ctrl: Request proceeds to controller
+    Ctrl-->>C: Response
+```
+
 
 ### Security Features
 
