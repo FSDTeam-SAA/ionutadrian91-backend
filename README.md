@@ -23,12 +23,12 @@
 - [Why This Starter?](#-why-this-starter)
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
-- [Architecture Overview](#-architecture-overview)
+- [System Overview](#-system-overview)
+  - [Authentication System](#authentication-system)
+  - [Database Design](#-database-design)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
 - [Environment Configuration](#-environment-configuration)
-- [Authentication System](#-authentication-system)
-- [Database Design](#-database-design)
 - [API Reference](#-api-reference)
 - [Docker Setup](#-docker-setup)
 - [Monitoring Stack](#-monitoring-stack)
@@ -129,218 +129,9 @@ This isn't just another boilerplate—it's a **battle-tested, production-grade f
 
 ---
 
+# 🔐 System Overview
 
-## 📁 Project Structure
-
-```
-nestjs-prisma-postgres-starter/
-├── 📂 src/
-│   ├── 📂 auth/                    # Authentication module
-│   │   ├── 📂 config/              # Auth configuration (timeouts, limits)
-│   │   ├── 📂 dto/                 # Data transfer objects
-│   │   ├── 📂 interfaces/          # TypeScript interfaces
-│   │   ├── 📂 services/            # Auth utility services
-│   │   ├── auth.controller.ts      # Auth endpoints
-│   │   ├── auth.service.ts         # Core auth business logic
-│   │   └── auth.module.ts          # Module definition
-│   │
-│   ├── 📂 common/                  # Shared utilities
-│   │   ├── 📂 config/              # App & Winston configuration
-│   │   ├── 📂 dto/                 # Shared DTOs
-│   │   ├── 📂 errors/              # Custom error classes
-│   │   ├── 📂 filters/             # Exception filters
-│   │   ├── 📂 guards/              # Auth guards
-│   │   ├── 📂 interceptors/        # Response & metrics interceptors
-│   │   ├── 📂 modules/             # Logger, Redis, Queue modules
-│   │   ├── 📂 queues/              # BullMQ email queue
-│   │   └── 📂 services/            # Prisma, Redis, Logger services
-│   │
-│   ├── 📂 metrics/                 # Prometheus metrics
-│   │   ├── metrics.controller.ts   # /metrics endpoint
-│   │   ├── metrics.service.ts      # Metric definitions
-│   │   └── metrics.interceptor.ts  # Request tracking
-│   │
-│   ├── 📂 user/                    # User management module
-│   │   ├── 📂 dto/                 # User DTOs
-│   │   ├── user.controller.ts      # User endpoints
-│   │   └── user.service.ts         # User business logic
-│   │
-│   ├── app.module.ts               # Root module
-│   ├── app.controller.ts           # Health check endpoint
-│   └── main.ts                     # Application bootstrap
-│
-├── 📂 prisma/
-│   ├── 📂 schema/                  # Modular Prisma schemas
-│   │   ├── base.prisma             # Generator & datasource config
-│   │   ├── enums.prisma            # All enums
-│   │   ├── auth.prisma             # AuthUser, AuthSecurity models
-│   │   ├── profile.prisma          # UserProfile model
-│   │   ├── history.prisma          # LoginHistory, EmailHistory
-│   │   ├── activityLog.prisma      # Activity logging
-│   │   └── subscription.prisma     # Subscription, Payment, Invoice
-│   └── 📂 migrations/              # Database migrations
-│
-├── 📂 monitoring/
-│   ├── 📂 prometheus/              # Prometheus config
-│   ├── 📂 grafana/                 # Grafana provisioning
-│   └── 📂 loki/                    # Loki configuration
-│
-├── 📂 templates/
-│   └── 📂 emails/                  # Email HTML templates
-│
-├── 📂 test/                        # E2E tests
-├── docker-compose.yaml             # Development services
-├── docker-compose.prod.yaml        # Production backend
-├── docker-compose.override.yaml    # Development overrides
-├── Dockerfile                      # Multi-stage build
-├── .env.example                    # Environment template
-└── postman-collection.json         # API collection
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js** ≥ 22
-- **npm** ≥ 10
-- **Docker** & **Docker Compose**
-- **Git**
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/the-pujon/nestjs-prisma-postgres-starter.git
-   cd nestjs-prisma-postgres-starter
-   ```
-
-2. **Create environment file**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Update `.env`** with your configuration (see [Environment Configuration](#-environment-configuration))
-
-4. **Start Docker services**
-   ```bash
-   # Start all services (PostgreSQL, Redis, Prometheus, Grafana, Loki)
-   docker compose up -d
-   ```
-
-5. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-6. **Run database migrations**
-   ```bash
-   npx prisma migrate dev
-   ```
-
-7. **Generate Prisma client**
-   ```bash
-   npx prisma generate
-   ```
-
-7. **Start the application**
-   ```bash
-   # Development mode with hot reload
-   npm run start:dev
-   
-   # Or production mode
-   npm run build && npm run start:prod
-   ```
-
-8. **Verify installation**
-   - API: http://localhost:5000
-   - PgAdmin: http://localhost:8080
-   - RedisInsight: http://localhost:8001
-   - Prometheus: http://localhost:9090
-   - Grafana: http://localhost:3000
-   - Loki: http://localhost:3100
-
----
-
-## ⚙️ Environment Configuration
-
-Create a `.env` file based on `.env.example`:
-
-```env
-# ═══════════════════════════════════════════════════════════════
-# DATABASE CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-DATABASE_URL=postgresql://admin:admin@127.0.0.1:5433/simple_blog
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=admin
-POSTGRES_DB=simple_blog
-DATABASE_PORT=5433
-DATABASE_HOST=127.0.0.1
-
-# ═══════════════════════════════════════════════════════════════
-# APPLICATION CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-NODE_ENV=development
-PORT=5000
-
-# ═══════════════════════════════════════════════════════════════
-# JWT CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-# IMPORTANT: Use a strong, random secret (at least 256 bits)
-# Generate with: openssl rand -base64 32
-JWT_SECRET=a-string-secret-at-least-256-bits-long
-
-# ═══════════════════════════════════════════════════════════════
-# REDIS CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_USER=default
-REDIS_PASSWORD=your_redis_password
-
-# ═══════════════════════════════════════════════════════════════
-# EMAIL CONFIGURATION (Gmail SMTP)
-# ═══════════════════════════════════════════════════════════════
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_USER=your-email@gmail.com
-EMAIL_PASS=your-app-password           # Use Gmail App Password
-EMAIL_FROM=noreply@yourapp.com
-
-# ═══════════════════════════════════════════════════════════════
-# GOOGLE OAUTH (Optional)
-# ═══════════════════════════════════════════════════════════════
-# Get credentials: https://console.cloud.google.com/apis/credentials
-GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
-
-# ═══════════════════════════════════════════════════════════════
-# PGADMIN CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-PGADMIN_DEFAULT_EMAIL=admin@example.com
-PGADMIN_DEFAULT_PASSWORD=admin
-
-# ═══════════════════════════════════════════════════════════════
-# MONITORING CONFIGURATION
-# ═══════════════════════════════════════════════════════════════
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=admin
-LOKI_ENABLED=true
-LOKI_URL=http://localhost:3100
-```
-
-### Gmail App Password Setup
-
-1. Enable 2-Factor Authentication on your Google account
-2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
-3. Generate a new app password for "Mail"
-4. Use this password in `EMAIL_PASS`
-
----
-
-## 🔐 Authentication System
+## Authentication System
 
 ### Registration Flow
 
@@ -757,6 +548,218 @@ npx prisma generate
 ```
 
 ---
+
+
+## 📁 Project Structure
+
+```
+nestjs-prisma-postgres-starter/
+├── 📂 src/
+│   ├── 📂 auth/                    # Authentication module
+│   │   ├── 📂 config/              # Auth configuration (timeouts, limits)
+│   │   ├── 📂 dto/                 # Data transfer objects
+│   │   ├── 📂 interfaces/          # TypeScript interfaces
+│   │   ├── 📂 services/            # Auth utility services
+│   │   ├── auth.controller.ts      # Auth endpoints
+│   │   ├── auth.service.ts         # Core auth business logic
+│   │   └── auth.module.ts          # Module definition
+│   │
+│   ├── 📂 common/                  # Shared utilities
+│   │   ├── 📂 config/              # App & Winston configuration
+│   │   ├── 📂 dto/                 # Shared DTOs
+│   │   ├── 📂 errors/              # Custom error classes
+│   │   ├── 📂 filters/             # Exception filters
+│   │   ├── 📂 guards/              # Auth guards
+│   │   ├── 📂 interceptors/        # Response & metrics interceptors
+│   │   ├── 📂 modules/             # Logger, Redis, Queue modules
+│   │   ├── 📂 queues/              # BullMQ email queue
+│   │   └── 📂 services/            # Prisma, Redis, Logger services
+│   │
+│   ├── 📂 metrics/                 # Prometheus metrics
+│   │   ├── metrics.controller.ts   # /metrics endpoint
+│   │   ├── metrics.service.ts      # Metric definitions
+│   │   └── metrics.interceptor.ts  # Request tracking
+│   │
+│   ├── 📂 user/                    # User management module
+│   │   ├── 📂 dto/                 # User DTOs
+│   │   ├── user.controller.ts      # User endpoints
+│   │   └── user.service.ts         # User business logic
+│   │
+│   ├── app.module.ts               # Root module
+│   ├── app.controller.ts           # Health check endpoint
+│   └── main.ts                     # Application bootstrap
+│
+├── 📂 prisma/
+│   ├── 📂 schema/                  # Modular Prisma schemas
+│   │   ├── base.prisma             # Generator & datasource config
+│   │   ├── enums.prisma            # All enums
+│   │   ├── auth.prisma             # AuthUser, AuthSecurity models
+│   │   ├── profile.prisma          # UserProfile model
+│   │   ├── history.prisma          # LoginHistory, EmailHistory
+│   │   ├── activityLog.prisma      # Activity logging
+│   │   └── subscription.prisma     # Subscription, Payment, Invoice
+│   └── 📂 migrations/              # Database migrations
+│
+├── 📂 monitoring/
+│   ├── 📂 prometheus/              # Prometheus config
+│   ├── 📂 grafana/                 # Grafana provisioning
+│   └── 📂 loki/                    # Loki configuration
+│
+├── 📂 templates/
+│   └── 📂 emails/                  # Email HTML templates
+│
+├── 📂 test/                        # E2E tests
+├── docker-compose.yaml             # Development services
+├── docker-compose.prod.yaml        # Production backend
+├── docker-compose.override.yaml    # Development overrides
+├── Dockerfile                      # Multi-stage build
+├── .env.example                    # Environment template
+└── postman-collection.json         # API collection
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- **Node.js** ≥ 22
+- **npm** ≥ 10
+- **Docker** & **Docker Compose**
+- **Git**
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/the-pujon/nestjs-prisma-postgres-starter.git
+   cd nestjs-prisma-postgres-starter
+   ```
+
+2. **Create environment file**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Update `.env`** with your configuration (see [Environment Configuration](#-environment-configuration))
+
+4. **Start Docker services**
+   ```bash
+   # Start all services (PostgreSQL, Redis, Prometheus, Grafana, Loki)
+   docker compose up -d
+   ```
+
+5. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+6. **Run database migrations**
+   ```bash
+   npx prisma migrate dev
+   ```
+
+7. **Generate Prisma client**
+   ```bash
+   npx prisma generate
+   ```
+
+7. **Start the application**
+   ```bash
+   # Development mode with hot reload
+   npm run start:dev
+   
+   # Or production mode
+   npm run build && npm run start:prod
+   ```
+
+8. **Verify installation**
+   - API: http://localhost:5000
+   - PgAdmin: http://localhost:8080
+   - RedisInsight: http://localhost:8001
+   - Prometheus: http://localhost:9090
+   - Grafana: http://localhost:3000
+   - Loki: http://localhost:3100
+
+---
+
+## ⚙️ Environment Configuration
+
+Create a `.env` file based on `.env.example`:
+
+```env
+# ═══════════════════════════════════════════════════════════════
+# DATABASE CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+DATABASE_URL=postgresql://admin:admin@127.0.0.1:5433/simple_blog
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=admin
+POSTGRES_DB=simple_blog
+DATABASE_PORT=5433
+DATABASE_HOST=127.0.0.1
+
+# ═══════════════════════════════════════════════════════════════
+# APPLICATION CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+NODE_ENV=development
+PORT=5000
+
+# ═══════════════════════════════════════════════════════════════
+# JWT CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+# IMPORTANT: Use a strong, random secret (at least 256 bits)
+# Generate with: openssl rand -base64 32
+JWT_SECRET=a-string-secret-at-least-256-bits-long
+
+# ═══════════════════════════════════════════════════════════════
+# REDIS CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_USER=default
+REDIS_PASSWORD=your_redis_password
+
+# ═══════════════════════════════════════════════════════════════
+# EMAIL CONFIGURATION (Gmail SMTP)
+# ═══════════════════════════════════════════════════════════════
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your-email@gmail.com
+EMAIL_PASS=your-app-password           # Use Gmail App Password
+EMAIL_FROM=noreply@yourapp.com
+
+# ═══════════════════════════════════════════════════════════════
+# GOOGLE OAUTH (Optional)
+# ═══════════════════════════════════════════════════════════════
+# Get credentials: https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_REDIRECT_URI=http://localhost:5000/auth/google/callback
+
+# ═══════════════════════════════════════════════════════════════
+# PGADMIN CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+PGADMIN_DEFAULT_EMAIL=admin@example.com
+PGADMIN_DEFAULT_PASSWORD=admin
+
+# ═══════════════════════════════════════════════════════════════
+# MONITORING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=admin
+LOKI_ENABLED=true
+LOKI_URL=http://localhost:3100
+```
+
+### Gmail App Password Setup
+
+1. Enable 2-Factor Authentication on your Google account
+2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
+3. Generate a new app password for "Mail"
+4. Use this password in `EMAIL_PASS`
+
+---
+
 
 ## 📡 API Reference
 
