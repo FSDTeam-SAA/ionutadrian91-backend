@@ -61,35 +61,49 @@ This isn't just another boilerplate—it's a **battle-tested, production-grade f
 
 ### 🔐 Authentication & Security
 - **JWT Authentication** with access & refresh tokens
-- **Token Rotation** for enhanced security
-- **Email Verification** with 6-digit OTP codes
-- **Google OAuth 2.0** integration ready
-- **Rate Limiting** (per-email, per-IP)
-- **Account Lockout** after failed attempts
-- **Password Strength Validation**
-- **Hybrid Token Validation** (Redis cache + DB fallback)
+- **Token Rotation** - New refresh token on each refresh (prevents token theft)
+- **Email Verification** with 6-digit OTP codes (24h expiry)
+- **Google OAuth 2.0** - Complete social login integration
+- **Rate Limiting** (per-email, per-IP based)
+- **Account Lockout** - 30 min lockout after 5 failed attempts
+- **Password Strength Validation** - Min 8 chars with complexity requirements
+- **Hybrid Token Validation** (Redis cache + DB fallback for speed)
+- **Timing Attack Prevention** - Consistent response times
+
+### 📧 Email System (BullMQ)
+- **Async Email Processing** with BullMQ job queue
+- **Automatic Retries** - 3 attempts with exponential backoff
+- **Email Templates** - HTML templates for verification & welcome emails
+- **Email History Tracking** - Full audit trail in database
+- **Multiple Email Types** - Verification, password reset, notifications
+
+### 🔗 OAuth Integration
+- **Google OAuth 2.0** - Login with Google account
+- **Provider Abstraction** - Easy to add more providers (GitHub, Facebook)
+- **Account Linking** - Link OAuth to existing accounts
+- **Secure Callback Handling** - State validation and token exchange
 
 ### 📦 Infrastructure
-- **PostgreSQL** with Prisma ORM (modular schema)
-- **Redis** for caching, sessions, and distributed locks
-- **BullMQ** for background job processing (emails)
+- **PostgreSQL 17** with Prisma ORM (modular schema)
+- **Redis Stack** for caching, sessions, and distributed locks
+- **BullMQ** for background job processing (emails, notifications)
 - **Docker Compose** for local development
-- **Multi-stage Docker builds** for production
+- **Multi-stage Docker builds** for production (~50% smaller images)
 
 ### 📊 Monitoring & Observability
-- **Prometheus** metrics collection
-- **Grafana** dashboards
-- **Loki** log aggregation
-- **Winston** structured logging
+- **Prometheus** metrics collection (request duration, errors, active users)
+- **Grafana** dashboards (auto-provisioned)
+- **Loki** log aggregation (structured JSON logs)
+- **Winston** structured logging with multiple transports
 - **Health checks** on startup
 
 ### 🚀 Developer Experience
-- **TypeScript** with strict mode
+- **TypeScript 5.7** with strict mode
 - **ESLint + Prettier** configured
-- **Unit tests** with Jest
-- **Postman collection** included
+- **Unit tests** with Jest + mocks
+- **Postman collection** included (all endpoints)
 - **Hot reload** in development
-- **CI/CD** with GitHub Actions
+- **CI/CD** with GitHub Actions (Docker Hub + EC2)
 
 ---
 
