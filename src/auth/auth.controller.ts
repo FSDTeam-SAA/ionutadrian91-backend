@@ -8,6 +8,7 @@ import {
   Res,
   Logger,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
 import { CreateAuthDto } from './dto/create-auth.dto';
@@ -18,6 +19,7 @@ import {
 } from './dto/google-oauth.dto';
 import type { Request, Response } from 'express';
 import { CustomLoggerService } from '../common/services/custom-logger.service';
+import { THROTTLER_CONFIG } from '../common/config/throttler.config';
 
 @Controller('auth')
 export class AuthController {
@@ -27,6 +29,8 @@ export class AuthController {
     private readonly customLogger: CustomLoggerService,
   ) {}
 
+  // Strict rate limit for registration: 5 requests per 15 minutes
+  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post()
   create(@Body() payload: CreateAuthDto, @Req() req: Request) {
     this.customLogger.log(
@@ -50,6 +54,8 @@ export class AuthController {
     return this.authService.create(payload, meta);
   }
 
+  // Strict rate limit for verification: 5 requests per 15 minutes
+  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post('verify-email')
   verifyEmail(
     @Body('email') email: string,
@@ -67,6 +73,8 @@ export class AuthController {
     return this.authService.verifyEmail(email, code, meta);
   }
 
+  // Strict rate limit: 5 requests per 15 minutes
+  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post('resend-verification-email')
   resendVerificationEmail(@Body('email') email: string, @Req() req: Request) {
     const meta = {
@@ -256,6 +264,8 @@ export class AuthController {
   /**
    * Login with email and password
    */
+  // Strict rate limit for login: 5 requests per 15 minutes per IP
+  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post('login')
   async login(
     @Body('email') email: string,
