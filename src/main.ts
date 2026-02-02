@@ -8,12 +8,44 @@ import {
   WINSTON_MODULE_PROVIDER,
 } from 'nest-winston';
 import { Logger } from 'winston';
+import helmet from 'helmet';
 // import { AllExceptionFilter } from './common/filters/all-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
+
+  // Security middleware - helmet helps secure Express apps by setting HTTP response headers
+  app.use(
+    helmet({
+      // Content Security Policy - helps prevent XSS attacks
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          scriptSrc: ["'self'"],
+        },
+      },
+      // Prevents clickjacking by setting X-Frame-Options
+      frameguard: { action: 'deny' },
+      // Hides X-Powered-By header
+      hidePoweredBy: true,
+      // Enforces HTTPS connections (enable in production with valid SSL)
+      hsts: {
+        maxAge: 31536000, // 1 year
+        includeSubDomains: true,
+        preload: true,
+      },
+      // Prevents MIME type sniffing
+      noSniff: true,
+      // Disables DNS prefetching
+      dnsPrefetchControl: { allow: false },
+      // Sets Referrer-Policy header
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    }),
+  );
 
   // Use Winston logger
   const nestLogger = app.get<LoggerService>(WINSTON_MODULE_NEST_PROVIDER);

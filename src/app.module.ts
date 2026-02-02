@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { RedisModule } from './common/modules/redis.module';
+import { RateLimitModule } from './common/modules/rate-limit.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './common/config/winston.config';
@@ -24,6 +25,8 @@ import { LoggerModule } from './common/modules/logger.module';
     LoggerModule,
     // Redis module (global - can be injected anywhere)
     RedisModule,
+    // Rate limiting module (global - throttles requests using Redis)
+    RateLimitModule,
     // Metrics module (global - Prometheus metrics)
     MetricsModule,
     // BlogModule,
