@@ -23,6 +23,7 @@
 - [Why This Starter?](#-why-this-starter)
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
+- [Quick Start](#-quick-start)
 - [System Overview](#-system-overview)
   - [Authentication System](#authentication-system)
   - [Database Design](#-database-design)
@@ -30,11 +31,17 @@
 - [Getting Started](#-getting-started)
 - [Environment Configuration](#-environment-configuration)
 - [API Reference](#-api-reference)
+- [Adding Protected Routes](#-adding-protected-routes)
+- [Extending the Template](#-extending-the-template)
+- [Frontend Integration](#-frontend-integration)
+- [Error Handling](#-error-handling)
 - [Docker Setup](#-docker-setup)
 - [Monitoring Stack](#-monitoring-stack)
 - [CI/CD Pipeline](#-cicd-pipeline)
 - [Testing](#-testing)
 - [Production Deployment](#-production-deployment)
+- [Security Best Practices](#-security-best-practices)
+- [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -54,6 +61,41 @@ This isn't just another boilerplate—it's a **battle-tested, production-grade f
 | **Centralized Logging (Loki)** | Aggregate logs from all services for debugging |
 | **Prometheus Metrics** | Real-time performance monitoring and alerting |
 | **Multi-stage Docker Builds** | Optimized production images (~50% smaller) |
+
+---
+
+## 🚀 Quick Start
+
+Get up and running in 5 minutes:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/the-pujon/nestjs-prisma-postgres-starter.git
+cd nestjs-prisma-postgres-starter
+
+# 2. Create environment file
+cp .env.example .env
+
+# 3. Start Docker services (PostgreSQL, Redis, Prometheus, Grafana, Loki)
+docker compose up -d
+
+# 4. Install dependencies
+npm install
+
+# 5. Run database migrations
+npx prisma migrate dev
+
+# 6. Start the development server
+npm run start:dev
+```
+
+**Verify installation:**
+- API Health: http://localhost:5000
+- API Docs: Import `postman-collection.json` into Postman
+- PgAdmin: http://localhost:8080 (admin@example.com / admin)
+- RedisInsight: http://localhost:8001
+- Grafana: http://localhost:3000 (admin / admin)
+- Prometheus: http://localhost:9090
 
 ---
 
@@ -311,34 +353,80 @@ sequenceDiagram
 
 ### Security Features
 
-| Feature | Configuration |
-|---------|---------------|
-| **Access Token Expiry** | 15 minutes |
-| **Refresh Token Expiry** | 7 days |
-| **Max Login Attempts** | 5 per 15 minutes |
-| **Account Lockout** | 30 minutes after max attempts |
-| **Max Devices per User** | 5 simultaneous sessions |
-| **Password Requirements** | Min 8 chars, uppercase, lowercase, number, special char |
-| **Verification Code Expiry** | 24 hours |
+| Feature | Configuration | File |
+|---------|---------------|------|
+| **Access Token Expiry** | 15 minutes | `src/auth/config/auth.config.ts` |
+| **Refresh Token Expiry** | 7 days | `src/auth/config/auth.config.ts` |
+| **Max Login Attempts** | 5 per 15 minutes | `src/auth/config/auth.config.ts` |
+| **Account Lockout** | 30 minutes after max attempts | `src/auth/config/auth.config.ts` |
+| **Max Devices per User** | 5 simultaneous sessions | `src/auth/config/auth.config.ts` |
+| **Password Requirements** | Min 8 chars, uppercase, lowercase, number, special char | `src/auth/config/auth.config.ts` |
+| **Verification Code Expiry** | 24 hours | `src/auth/config/auth.config.ts` |
+
+### Customizing Auth Configuration
+
+To modify authentication settings, edit `src/auth/config/auth.config.ts`:
+
+```typescript
+export const AUTH_CONFIG = {
+  // Password Configuration
+  PASSWORD_MIN_LENGTH: 8,
+  PASSWORD_REQUIREMENTS: {
+    UPPERCASE: true,
+    LOWERCASE: true,
+    NUMBERS: true,
+    SPECIAL_CHARS: true,
+  },
+
+  // Token Configuration - Modify expiry times
+  TOKEN_EXPIRY: {
+    ACCESS: '15m',     // Short-lived for security
+    REFRESH: '7d',     // 7 days
+    VERIFICATION: '24h',
+    PASSWORD_RESET: '1h',
+  },
+
+  // Rate Limiting
+  RATE_LIMIT: {
+    LOGIN_MAX_ATTEMPTS: 5,
+    LOGIN_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
+  },
+
+  // Account Lockout
+  ACCOUNT_LOCKOUT: {
+    MAX_FAILED_ATTEMPTS: 5,
+    LOCKOUT_DURATION_MS: 30 * 60 * 1000, // 30 minutes
+  },
+
+  // Session/Device Management
+  SESSION: {
+    MAX_DEVICES_PER_USER: 5,
+  },
+} as const;
+```
 
 ### API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/auth/signup` | Register new user |
-| `POST` | `/auth/verify-email` | Verify email with OTP |
-| `POST` | `/auth/resend-verification` | Resend verification email |
-| `POST` | `/auth/login` | Login and get tokens |
-| `POST` | `/auth/refresh` | Refresh access token |
-| `POST` | `/auth/logout` | Logout (revoke refresh token) |
-| `POST` | `/auth/logout-all` | Logout all devices |
-| `POST` | `/auth/forgot-password` | Request password reset |
-| `POST` | `/auth/reset-password` | Reset password with token |
-| `POST` | `/auth/change-password` | Change password (authenticated) |
-| `GET` | `/auth/sessions` | List active sessions |
-| `DELETE` | `/auth/sessions/:jti` | Revoke specific session |
-| `GET` | `/auth/google` | Initiate Google OAuth |
-| `GET` | `/auth/google/callback` | Google OAuth callback |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/auth` | ❌ | Register new user |
+| `POST` | `/auth/verify-email` | ❌ | Verify email with OTP |
+| `POST` | `/auth/resend-verification-email` | ❌ | Resend verification email |
+| `POST` | `/auth/login` | ❌ | Login and get tokens |
+| `POST` | `/auth/refresh-token` | ❌ | Refresh access token |
+| `POST` | `/auth/logout` | ❌ | Logout (revoke refresh token) |
+| `POST` | `/auth/logout-all` | ❌ | Logout all devices |
+| `GET` | `/auth/google` | ❌ | Initiate Google OAuth |
+| `GET` | `/auth/google/callback` | ❌ | Google OAuth callback |
+| `POST` | `/auth/google/callback` | ❌ | Google OAuth callback (POST) |
+| `GET` | `/user` | ❌* | List all users |
+| `GET` | `/user/:id` | ❌* | Get user by ID |
+| `PATCH` | `/user/:id` | ❌* | Update user |
+| `DELETE` | `/user/:id` | ❌* | Delete user |
+| `GET` | `/` | ❌ | Health check |
+| `GET` | `/metrics` | ❌ | Prometheus metrics |
+
+> *Note: User endpoints are currently public. See [Adding Protected Routes](#-adding-protected-routes) to secure them.
 
 ---
 
@@ -673,6 +761,33 @@ nestjs-prisma-postgres-starter/
    npm run build && npm run start:prod
    ```
 
+### Available NPM Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run start:dev` | Start in development mode with hot reload |
+| `npm run start:debug` | Start in debug mode with inspector |
+| `npm run start:prod` | Start in production mode |
+| `npm run build` | Build the application |
+| `npm run test` | Run unit tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:cov` | Run tests with coverage report |
+| `npm run test:e2e` | Run end-to-end tests |
+| `npm run lint` | Run ESLint and fix issues |
+| `npm run format` | Format code with Prettier |
+| `npm run docker:dev` | Start Docker services |
+
+### Prisma Commands
+
+| Command | Description |
+|---------|-------------|
+| `npx prisma generate` | Generate Prisma Client |
+| `npx prisma migrate dev` | Create and apply new migration |
+| `npx prisma migrate deploy` | Apply pending migrations (production) |
+| `npx prisma migrate reset` | Reset database and apply all migrations |
+| `npx prisma studio` | Open Prisma Studio GUI |
+| `npx prisma db push` | Push schema changes without migration |
+
 8. **Verify installation**
    - API: http://localhost:5000
    - PgAdmin: http://localhost:8080
@@ -684,6 +799,52 @@ nestjs-prisma-postgres-starter/
 ---
 
 ## ⚙️ Environment Configuration
+
+### Complete Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| **Database** |
+| `DATABASE_URL` | ✅ | - | PostgreSQL connection string |
+| `POSTGRES_USER` | ✅ | - | PostgreSQL username (for Docker) |
+| `POSTGRES_PASSWORD` | ✅ | - | PostgreSQL password (for Docker) |
+| `POSTGRES_DB` | ✅ | - | PostgreSQL database name |
+| `DATABASE_PORT` | ❌ | `5433` | PostgreSQL port mapping |
+| `DATABASE_HOST` | ❌ | `127.0.0.1` | PostgreSQL host |
+| **Application** |
+| `NODE_ENV` | ❌ | `development` | Environment: `development`, `production`, `test` |
+| `PORT` | ❌ | `5000` | Application port |
+| **JWT Authentication** |
+| `JWT_SECRET` | ✅ | - | JWT signing secret (min 256 bits) |
+| `JWT_ACCESS_SECRET` | ❌ | `JWT_SECRET` | Separate secret for access tokens |
+| `JWT_REFRESH_SECRET` | ❌ | `JWT_SECRET` | Separate secret for refresh tokens |
+| **Redis** |
+| `REDIS_HOST` | ❌ | `localhost` | Redis server host |
+| `REDIS_PORT` | ❌ | `6379` | Redis server port |
+| `REDIS_USER` | ❌ | `default` | Redis username |
+| `REDIS_PASSWORD` | ❌ | - | Redis password |
+| `REDIS_DB` | ❌ | `0` | Redis database number |
+| `REDIS_CACHE_KEY_PREFIX` | ❌ | `app` | Prefix for all Redis keys |
+| **Email (SMTP)** |
+| `EMAIL_HOST` | ✅ | `smtp.gmail.com` | SMTP server host |
+| `EMAIL_PORT` | ❌ | `587` | SMTP server port |
+| `EMAIL_USER` | ✅ | - | SMTP username (email address) |
+| `EMAIL_PASS` | ✅ | - | SMTP password (App Password for Gmail) |
+| `EMAIL_FROM` | ❌ | `EMAIL_USER` | From address for outgoing emails |
+| **Google OAuth** |
+| `GOOGLE_CLIENT_ID` | ❌ | - | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | ❌ | - | Google OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | ❌ | - | OAuth callback URL |
+| **Monitoring** |
+| `GRAFANA_ADMIN_USER` | ❌ | `admin` | Grafana admin username |
+| `GRAFANA_ADMIN_PASSWORD` | ❌ | `admin` | Grafana admin password |
+| `LOKI_ENABLED` | ❌ | `true` | Enable Loki log aggregation |
+| `LOKI_URL` | ❌ | `http://localhost:3100` | Loki server URL |
+| **PgAdmin** |
+| `PGADMIN_DEFAULT_EMAIL` | ❌ | `admin@example.com` | PgAdmin login email |
+| `PGADMIN_DEFAULT_PASSWORD` | ❌ | `admin` | PgAdmin login password |
+
+### Create `.env` File
 
 Create a `.env` file based on `.env.example`:
 
@@ -763,6 +924,13 @@ LOKI_URL=http://localhost:3100
 
 ## 📡 API Reference
 
+### Base URL
+
+```
+Development: http://localhost:5000
+Production:  https://your-domain.com
+```
+
 ### Response Format
 
 All API responses follow a consistent format:
@@ -770,23 +938,332 @@ All API responses follow a consistent format:
 ```json
 // Success Response
 {
-  "success": true,
-  "message": "Operation successful",
-  "data": { ... },
-  "timestamp": "2024-01-29T12:00:00.000Z"
+  "statusCode": 200,
+  "message": "Success",
+  "data": { ... }
 }
 
 // Error Response
 {
-  "success": false,
+  "statusCode": 400,
   "message": "Error description",
-  "error": {
-    "code": "ERROR_CODE",
-    "details": { ... }
-  },
-  "timestamp": "2024-01-29T12:00:00.000Z"
+  "errors": { ... },
+  "error": "AppError"
 }
 ```
+
+### Authentication Endpoints
+
+#### Register User
+```http
+POST /auth
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "SecurePass123!",
+  "username": "johndoe"
+}
+```
+
+**Password Requirements:**
+- Minimum 8 characters
+- At least 1 uppercase letter
+- At least 1 lowercase letter
+- At least 1 number
+- At least 1 special character
+
+**Response (201 Created):**
+```json
+{
+  "statusCode": 201,
+  "message": "Success",
+  "data": null
+}
+```
+> A verification email with 6-digit code will be sent to the user.
+
+---
+
+#### Verify Email
+```http
+POST /auth/verify-email
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "message": "Email verified successfully"
+  }
+}
+```
+
+---
+
+#### Resend Verification Email
+```http
+POST /auth/resend-verification-email
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+**Rate Limit:** Max 3 requests per 15 minutes per email.
+
+---
+
+#### Login
+```http
+POST /auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "SecurePass123!"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "user@example.com",
+      "username": "johndoe",
+      "role": "USER",
+      "verified": true
+    },
+    "expiresIn": 900
+  }
+}
+```
+
+**Rate Limit:** Max 5 attempts per 15 minutes per email/IP.
+
+---
+
+#### Refresh Token
+```http
+POST /auth/refresh-token
+Content-Type: application/json
+
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": 900
+  }
+}
+```
+
+> **Note:** Token rotation is implemented. The old refresh token is invalidated, and a new one is issued.
+
+---
+
+#### Logout
+```http
+POST /auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "userId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "success": true,
+    "message": "Logged out successfully"
+  }
+}
+```
+
+---
+
+#### Logout All Devices
+```http
+POST /auth/logout-all
+Content-Type: application/json
+
+{
+  "userId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "success": true,
+    "message": "Logged out from all devices successfully"
+  }
+}
+```
+
+> **Note:** This also increments the `tokenVersion`, immediately invalidating all existing access tokens.
+
+---
+
+### Google OAuth Endpoints
+
+#### Initiate Google OAuth
+```http
+GET /auth/google?redirectUrl=http://localhost:3000/dashboard
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "url": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "state": "abc123...",
+    "message": "Redirect to the provided URL to authenticate with Google"
+  }
+}
+```
+
+---
+
+#### Google OAuth Callback
+```http
+GET /auth/google/callback?code=AUTH_CODE&state=STATE_TOKEN
+```
+
+**Browser Flow:** Redirects to `redirectUrl` with tokens as query params:
+```
+http://localhost:3000/dashboard?access_token=xxx&refresh_token=xxx&user_id=xxx&email=xxx&is_new_user=false
+```
+
+**API Flow (POST):**
+```http
+POST /auth/google/callback
+Content-Type: application/json
+
+{
+  "code": "AUTH_CODE",
+  "state": "STATE_TOKEN"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": {
+    "success": true,
+    "message": "Signed in successfully via Google",
+    "data": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "email": "user@gmail.com",
+        "username": "user_google_123456"
+      },
+      "isNewUser": true
+    }
+  }
+}
+```
+
+---
+
+### User Endpoints
+
+#### Get All Users
+```http
+GET /user
+```
+
+---
+
+#### Get User by ID
+```http
+GET /user/:id
+```
+
+---
+
+#### Update User
+```http
+PATCH /user/:id
+Content-Type: application/json
+
+{
+  "username": "newusername"
+}
+```
+
+---
+
+#### Delete User
+```http
+DELETE /user/:id
+```
+
+---
+
+### Health & Metrics
+
+#### Health Check
+```http
+GET /
+```
+
+**Response:**
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": "Hello World!"
+}
+```
+
+---
+
+#### Prometheus Metrics
+```http
+GET /metrics
+```
+
+**Response:** Prometheus text format metrics
+
+---
 
 ### Postman Collection
 
@@ -823,6 +1300,895 @@ curl -X GET http://localhost:5000/user/me \
 
 ---
 
+## 🔒 Adding Protected Routes
+
+### Using AuthGuard
+
+The template includes a pre-built `AuthGuard` that validates JWT tokens with hybrid Redis/DB verification. Here's how to protect your routes:
+
+#### Method 1: Controller-Level Guard (Protect All Routes)
+
+```typescript
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '../common/guards/auth.guard';
+
+@Controller('products')
+@UseGuards(AuthGuard) // All routes in this controller require authentication
+export class ProductController {
+  @Get()
+  findAll() {
+    return this.productService.findAll();
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.productService.findOne(id);
+  }
+}
+```
+
+#### Method 2: Route-Level Guard (Selective Protection)
+
+```typescript
+import { Controller, Get, Post, UseGuards, Request } from '@nestjs/common';
+import { AuthGuard } from '../common/guards/auth.guard';
+
+@Controller('products')
+export class ProductController {
+  @Get() // Public route - no guard
+  findAll() {
+    return this.productService.findAll();
+  }
+
+  @Post()
+  @UseGuards(AuthGuard) // Protected route - requires authentication
+  create(@Body() dto: CreateProductDto, @Request() req) {
+    // Access authenticated user from request
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+    return this.productService.create(dto, userId);
+  }
+}
+```
+
+#### Accessing User Data in Protected Routes
+
+When a route is protected, the `AuthGuard` attaches the user payload to the request:
+
+```typescript
+@Get('profile')
+@UseGuards(AuthGuard)
+getProfile(@Request() req) {
+  // req.user contains: { userId, role, tokenVersion }
+  console.log(req.user.userId);    // User's UUID
+  console.log(req.user.role);      // 'USER' | 'ADMIN' | 'MODERATOR' | 'SUPERADMIN'
+  
+  return this.userService.findById(req.user.userId);
+}
+```
+
+#### Creating a Custom User Decorator (Recommended)
+
+For cleaner code, create a custom decorator:
+
+```typescript
+// src/common/decorators/user.decorator.ts
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
+export const CurrentUser = createParamDecorator(
+  (data: string | undefined, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest();
+    if (data) {
+      return request.user?.[data];
+    }
+    return request.user;
+  },
+);
+
+// Usage in controller
+@Get('profile')
+@UseGuards(AuthGuard)
+getProfile(@CurrentUser() user) {
+  return this.userService.findById(user.userId);
+}
+
+@Get('my-orders')
+@UseGuards(AuthGuard)
+getMyOrders(@CurrentUser('userId') userId: string) {
+  return this.orderService.findByUser(userId);
+}
+```
+
+#### Role-Based Access Control (RBAC)
+
+Create a roles guard for admin-only routes:
+
+```typescript
+// src/common/guards/roles.guard.ts
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
+    if (!requiredRoles) {
+      return true;
+    }
+    const { user } = context.switchToHttp().getRequest();
+    return requiredRoles.includes(user.role);
+  }
+}
+
+// Create roles decorator
+// src/common/decorators/roles.decorator.ts
+import { SetMetadata } from '@nestjs/common';
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles);
+
+// Usage
+@Get('admin/users')
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPERADMIN')
+getAllUsers() {
+  return this.userService.findAll();
+}
+```
+
+---
+
+## 🔧 Extending the Template
+
+### Adding a New Module
+
+Let's add a complete `Product` module as an example:
+
+#### Step 1: Generate Module Files
+
+```bash
+# Generate module, controller, and service
+nest g module product
+nest g controller product
+nest g service product
+```
+
+#### Step 2: Add Prisma Schema
+
+Create `prisma/schema/product.prisma`:
+
+```prisma
+model Product {
+    id          String   @id @default(uuid())
+    name        String
+    description String?
+    price       Decimal  @db.Decimal(10, 2)
+    stock       Int      @default(0)
+    isActive    Boolean  @default(true)
+    createdBy   String
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    // Relations
+    creator     authUser @relation(fields: [createdBy], references: [id])
+
+    @@index([name])
+    @@index([createdBy])
+}
+```
+
+Don't forget to add the relation in `auth.prisma`:
+
+```prisma
+model authUser {
+    // ... existing fields
+    products          Product[]
+}
+```
+
+#### Step 3: Run Migration
+
+```bash
+npx prisma migrate dev --name add_product_model
+```
+
+#### Step 4: Create DTOs
+
+Create `src/product/dto/create-product.dto.ts`:
+
+```typescript
+import { IsString, IsNumber, IsOptional, Min, MaxLength } from 'class-validator';
+
+export class CreateProductDto {
+  @IsString()
+  @MaxLength(200)
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  price: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  stock?: number;
+}
+```
+
+#### Step 5: Implement Service
+
+```typescript
+// src/product/product.service.ts
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../common/services/prisma.service';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import AppError from '../common/errors/app.error';
+
+@Injectable()
+export class ProductService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly logger: CustomLoggerService,
+    private readonly activityLog: ActivityLogService,
+  ) {}
+
+  async create(dto: CreateProductDto, userId: string, meta: { ip: string; userAgent: string }) {
+    this.logger.log(`Creating product: ${dto.name}`, 'ProductService');
+
+    const product = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
+        data: {
+          ...dto,
+          createdBy: userId,
+        },
+      });
+
+      // Log activity
+      await this.activityLog.logCreate(
+        'product',
+        created.id,
+        { name: dto.name, price: dto.price },
+        { ip: meta.ip, userAgent: meta.userAgent, actionedBy: userId },
+        tx,
+      );
+
+      return created;
+    });
+
+    return product;
+  }
+
+  async findAll(page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    
+    const [products, total] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { isActive: true },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.product.count({ where: { isActive: true } }),
+    ]);
+
+    return {
+      data: products,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOne(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+    });
+
+    if (!product) {
+      throw AppError.notFound('Product not found');
+    }
+
+    return product;
+  }
+}
+```
+
+#### Step 6: Implement Controller
+
+```typescript
+// src/product/product.controller.ts
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { ProductService } from './product.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { AuthGuard } from '../common/guards/auth.guard';
+
+@Controller('products')
+export class ProductController {
+  constructor(private readonly productService: ProductService) {}
+
+  @Post()
+  @UseGuards(AuthGuard)
+  create(@Body() dto: CreateProductDto, @Request() req) {
+    const meta = {
+      ip: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown',
+    };
+    return this.productService.create(dto, req.user.userId, meta);
+  }
+
+  @Get()
+  findAll(@Query('page') page = 1, @Query('limit') limit = 10) {
+    return this.productService.findAll(+page, +limit);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.productService.findOne(id);
+  }
+}
+```
+
+#### Step 7: Update Module
+
+```typescript
+// src/product/product.module.ts
+import { Module } from '@nestjs/common';
+import { ProductController } from './product.controller';
+import { ProductService } from './product.service';
+import { PrismaService } from '../common/services/prisma.service';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
+import { ActivityLogService } from '../common/services/activity-log.service';
+import { RedisService } from '../common/services/redis.service';
+
+@Module({
+  controllers: [ProductController],
+  providers: [
+    ProductService,
+    PrismaService,
+    CustomLoggerService,
+    ActivityLogService,
+    RedisService,
+  ],
+})
+export class ProductModule {}
+```
+
+### Adding Caching with Redis
+
+Use the built-in `RedisService` for caching:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { RedisService } from '../common/services/redis.service';
+import { PrismaService } from '../common/services/prisma.service';
+
+@Injectable()
+export class ProductService {
+  constructor(
+    private readonly redis: RedisService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async findOne(id: string) {
+    const cacheKey = `product:${id}`;
+    
+    // Try cache first
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from database
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+    });
+
+    if (product) {
+      // Cache for 1 hour
+      await this.redis.set(cacheKey, product, 3600);
+    }
+
+    return product;
+  }
+
+  async update(id: string, data: any) {
+    const product = await this.prisma.product.update({
+      where: { id },
+      data,
+    });
+
+    // Invalidate cache
+    await this.redis.del(`product:${id}`);
+
+    return product;
+  }
+}
+```
+
+### Adding Background Jobs
+
+Use the existing BullMQ setup to add new job types:
+
+```typescript
+// src/common/queues/notification/notification.queue.ts
+import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable } from '@nestjs/common';
+import { Queue } from 'bullmq';
+
+@Injectable()
+export class NotificationQueueService {
+  constructor(@InjectQueue('notification') private notificationQueue: Queue) {}
+
+  async sendPushNotification(userId: string, title: string, body: string) {
+    await this.notificationQueue.add(
+      'push-notification',
+      { userId, title, body },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 1000 },
+      },
+    );
+  }
+}
+```
+
+Register the queue in `src/common/modules/queue.module.ts`:
+
+```typescript
+@Module({
+  imports: [
+    BullModule.registerQueue(
+      { name: 'email' },
+      { name: 'notification' }, // Add new queue
+    ),
+  ],
+  // ...
+})
+```
+
+#### Step 2: Create the Processor (Worker)
+
+The processor picks jobs from the queue and processes them:
+
+```typescript
+// src/common/queues/notification/notification.processor.ts
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Inject } from '@nestjs/common';
+import { Job } from 'bullmq';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
+
+// Define job data interface
+export interface PushNotificationJob {
+  userId: string;
+  title: string;
+  body: string;
+}
+
+@Processor('notification') // Must match queue name
+export class NotificationProcessor extends WorkerHost {
+  constructor(
+    @Inject(WINSTON_MODULE_PROVIDER)
+    private readonly logger: Logger,
+  ) {
+    super();
+  }
+
+  // This method is called automatically when a job is picked from the queue
+  async process(job: Job<PushNotificationJob>): Promise<void> {
+    this.logger.info(`Processing notification job: ${job.name} (ID: ${job.id})`, {
+      context: 'NotificationProcessor',
+      jobId: job.id,
+      jobName: job.name,
+    });
+
+    try {
+      const { userId, title, body } = job.data;
+
+      // Your notification logic here
+      await this.sendPushNotification(userId, title, body);
+
+      this.logger.info(`Notification sent successfully to user ${userId}`, {
+        context: 'NotificationProcessor',
+        jobId: job.id,
+      });
+    } catch (error) {
+      this.logger.error(`Failed to process notification job ${job.id}`, {
+        context: 'NotificationProcessor',
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      
+      // Re-throw to trigger retry (based on job config)
+      throw error;
+    }
+  }
+
+  private async sendPushNotification(
+    userId: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    // Implement your push notification logic
+    // e.g., Firebase Cloud Messaging, OneSignal, etc.
+    console.log(`Sending push to ${userId}: ${title} - ${body}`);
+  }
+}
+```
+
+#### Step 3: Register Processor in Module
+
+```typescript
+// src/common/modules/queue.module.ts
+import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { NotificationQueueService } from '../queues/notification/notification.queue';
+import { NotificationProcessor } from '../queues/notification/notification.processor';
+
+@Module({
+  imports: [
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+      },
+    }),
+    BullModule.registerQueue(
+      { name: 'email' },
+      { name: 'notification' },
+    ),
+  ],
+  providers: [
+    NotificationQueueService,
+    NotificationProcessor, // Register the processor
+  ],
+  exports: [NotificationQueueService],
+})
+export class QueueModule {}
+```
+
+#### Step 4: Use the Queue Service
+
+```typescript
+// In any service
+import { NotificationQueueService } from '../common/queues/notification/notification.queue';
+
+@Injectable()
+export class OrderService {
+  constructor(
+    private readonly notificationQueue: NotificationQueueService,
+  ) {}
+
+  async createOrder(data: CreateOrderDto, userId: string) {
+    const order = await this.prisma.order.create({ data });
+
+    // Queue notification (processed in background)
+    await this.notificationQueue.sendPushNotification(
+      userId,
+      'Order Confirmed!',
+      `Your order #${order.id} has been placed.`,
+    );
+
+    return order;
+  }
+}
+```
+
+#### BullMQ Job Options Reference
+
+```typescript
+await this.queue.add('job-name', jobData, {
+  attempts: 3,              // Retry 3 times on failure
+  backoff: {
+    type: 'exponential',    // exponential, fixed
+    delay: 2000,            // Initial delay: 2s, then 4s, 8s...
+  },
+  delay: 5000,              // Delay job execution by 5 seconds
+  priority: 1,              // Lower = higher priority
+  removeOnComplete: 100,    // Keep last 100 completed jobs
+  removeOnFail: 500,        // Keep last 500 failed jobs
+  timeout: 30000,           // Job timeout: 30 seconds
+});
+```
+
+#### Monitoring Jobs in RedisInsight
+
+1. Open http://localhost:8001
+2. Browse keys starting with `bull:notification:`
+   - `bull:notification:waiting` - Jobs waiting to be processed
+   - `bull:notification:active` - Currently processing
+   - `bull:notification:completed` - Finished jobs
+   - `bull:notification:failed` - Failed jobs
+
+### Adding Activity Logging
+
+The template includes a built-in `ActivityLogService` for audit trails:
+
+```typescript
+import { ActivityLogService } from '../common/services/activity-log.service';
+
+@Injectable()
+export class ProductService {
+  constructor(
+    private readonly activityLog: ActivityLogService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async update(id: string, data: UpdateProductDto, userId: string, meta: { ip: string; userAgent: string }) {
+    const oldProduct = await this.prisma.product.findUnique({ where: { id } });
+    
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id },
+        data,
+      });
+
+      // Log the update with field changes
+      await this.activityLog.logUpdate(
+        'product',
+        id,
+        {
+          name: { old: oldProduct.name, new: data.name },
+          price: { old: oldProduct.price, new: data.price },
+        },
+        { ip: meta.ip, userAgent: meta.userAgent, actionedBy: userId },
+        tx,
+      );
+
+      return product;
+    });
+
+    return updated;
+  }
+}
+```
+
+### Adding Custom Metrics
+
+Use the Prometheus metrics service to track custom business metrics:
+
+```typescript
+import { MetricsService } from '../metrics/metrics.service';
+
+@Injectable()
+export class OrderService {
+  constructor(private readonly metrics: MetricsService) {}
+
+  async createOrder(data: CreateOrderDto) {
+    const order = await this.prisma.order.create({ data });
+    
+    // Track custom metrics
+    this.metrics.recordDatabaseQuery('create', 'Order');
+    
+    return order;
+  }
+}
+```
+
+### Adding Custom Email Types
+
+To add a new email type (e.g., order confirmation):
+
+#### Step 1: Create Email Template
+
+Create `templates/emails/order-confirmation.html`:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .container { max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; }
+    .header { background: #4F46E5; color: white; padding: 20px; text-align: center; }
+    .content { padding: 20px; }
+    .order-details { background: #f5f5f5; padding: 15px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Order Confirmed!</h1>
+    </div>
+    <div class="content">
+      <p>Hi {{username}},</p>
+      <p>Your order <strong>#{{orderId}}</strong> has been confirmed.</p>
+      <div class="order-details">
+        <p><strong>Order Total:</strong> ${{total}}</p>
+        <p><strong>Estimated Delivery:</strong> {{deliveryDate}}</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+```
+
+#### Step 2: Add Job Type to Queue
+
+```typescript
+// src/common/queues/email/email.queue.ts
+
+export interface OrderConfirmationEmailJob {
+  type: 'order-confirmation';
+  email: string;
+  username: string;
+  orderId: string;
+  total: string;
+  deliveryDate: string;
+}
+
+export type EmailJob = VerificationEmailJob | WelcomeEmailJob | OrderConfirmationEmailJob;
+
+// Add method to EmailQueueService
+async sendOrderConfirmationEmail(
+  email: string,
+  username: string,
+  orderId: string,
+  total: string,
+  deliveryDate: string,
+): Promise<void> {
+  await this.emailQueue.add(
+    'send-order-confirmation',
+    {
+      type: 'order-confirmation',
+      email,
+      username,
+      orderId,
+      total,
+      deliveryDate,
+    } as OrderConfirmationEmailJob,
+    {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  );
+}
+```
+
+#### Step 3: Handle in Processor
+
+Update the email processor to handle the new job type.
+
+
+---
+
+## ❌ Error Handling
+
+### Standard Error Response Format
+
+All errors follow this consistent format:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Human-readable error message",
+  "errors": {
+    "code": "ERROR_CODE",
+    "details": {}
+  },
+  "error": "AppError"
+}
+```
+
+### Error Codes Reference
+
+| HTTP Status | Error Type | When It Occurs |
+|------------|------------|----------------|
+| `400` | Bad Request | Invalid input, validation failed, weak password |
+| `401` | Unauthorized | Invalid/expired token, wrong credentials |
+| `403` | Forbidden | Email not verified, account locked/suspended |
+| `404` | Not Found | User/resource doesn't exist |
+| `409` | Conflict | Email/username already exists, concurrent login |
+| `429` | Too Many Requests | Rate limit exceeded |
+| `500` | Internal Server Error | Unexpected server error |
+| `503` | Service Unavailable | Redis/DB connection failed |
+
+### Common Error Scenarios
+
+#### Authentication Errors
+
+```typescript
+// Invalid credentials
+{
+  "statusCode": 401,
+  "message": "Invalid email or password"
+}
+
+// Token expired
+{
+  "statusCode": 401,
+  "message": "Token has expired"
+}
+
+// Token revoked (password changed, force logout)
+{
+  "statusCode": 401,
+  "message": "Token has been revoked. Please login again."
+}
+
+// Account locked
+{
+  "statusCode": 403,
+  "message": "Account is temporarily locked. Please try again in 25 minutes."
+}
+
+// Email not verified
+{
+  "statusCode": 403,
+  "message": "Please verify your email address before logging in"
+}
+
+// Account suspended
+{
+  "statusCode": 403,
+  "message": "Your account has been suspended. Please contact support."
+}
+```
+
+#### Validation Errors
+
+```typescript
+// Weak password
+{
+  "statusCode": 400,
+  "message": "Password does not meet security requirements"
+}
+
+// Invalid input
+{
+  "statusCode": 400,
+  "message": "Validation failed",
+  "errors": [
+    { "property": "email", "constraints": { "isEmail": "email must be an email" } }
+  ]
+}
+```
+
+#### Rate Limiting
+
+```typescript
+{
+  "statusCode": 429,
+  "message": "Too Many Requests"
+}
+```
+
+### Handling Errors in Frontend
+
+```typescript
+try {
+  await api.login(email, password);
+} catch (error) {
+  if (error.statusCode === 401) {
+    setError('Invalid email or password');
+  } else if (error.statusCode === 403) {
+    if (error.message.includes('verify')) {
+      // Redirect to email verification
+      router.push('/verify-email');
+    } else if (error.message.includes('locked')) {
+      setError('Account locked. Please try again later.');
+    }
+  } else if (error.statusCode === 429) {
+    setError('Too many attempts. Please wait 15 minutes.');
+  } else {
+    setError('An unexpected error occurred');
+  }
+}
+```
+
+---
+
 ## 🐳 Docker Setup
 
 ### Development
@@ -831,26 +2197,78 @@ curl -X GET http://localhost:5000/user/me \
 # Start all services
 docker compose up -d
 
+# Start specific services only
+docker compose up -d postgres_db redis-stack
+
 # View logs
 docker compose logs -f
+
+# View logs for specific service
+docker compose logs -f postgres_db
 
 # Stop services
 docker compose down
 
-# Stop and remove volumes (reset data)
+# Stop and remove volumes (reset all data)
 docker compose down -v
+
+# Rebuild containers
+docker compose up -d --build
 ```
 
 ### Services Overview
 
-| Service | Port | Description |
-|---------|------|-------------|
-| `postgres_db` | 5433 | PostgreSQL database |
-| `pg_admin` | 8080, 8443 | PgAdmin web interface |
-| `redis_cache` | 6379, 8001 | Redis Stack with RedisInsight |
-| `prometheus` | 9090 | Metrics collection |
-| `grafana` | 3000 | Visualization dashboards |
-| `loki` | 3100 | Log aggregation |
+| Service | Port(s) | URL | Description |
+|---------|---------|-----|-------------|
+| `postgres_db` | 5433 | - | PostgreSQL 17 database |
+| `pg_admin` | 8080, 8443 | http://localhost:8080 | PgAdmin web interface |
+| `redis-stack` | 6379, 8001 | http://localhost:8001 | Redis Stack with RedisInsight |
+| `prometheus` | 9090 | http://localhost:9090 | Metrics collection |
+| `grafana` | 3000 | http://localhost:3000 | Visualization dashboards |
+| `loki` | 3100 | http://localhost:3100 | Log aggregation |
+
+### Service Access Credentials
+
+| Service | Username | Password |
+|---------|----------|----------|
+| PostgreSQL | `admin` (or `POSTGRES_USER`) | `admin` (or `POSTGRES_PASSWORD`) |
+| PgAdmin | `admin@example.com` | `admin` |
+| Grafana | `admin` | `admin` |
+| Redis | `default` | (no password by default) |
+
+### Connecting to PostgreSQL via PgAdmin
+
+1. Open http://localhost:8080
+2. Login with `admin@example.com` / `admin`
+3. Right-click "Servers" → "Register" → "Server"
+4. **General tab:** Name: `Local Development`
+5. **Connection tab:**
+   - Host: `postgres_db` (Docker network name)
+   - Port: `5432` (internal port)
+   - Database: `simple_blog`
+   - Username: `admin`
+   - Password: `admin`
+
+### RedisInsight Usage
+
+1. Open http://localhost:8001
+2. Click "Add Redis Database"
+3. Use connection: `redis://localhost:6379`
+4. Browse keys, monitor commands, view memory usage
+
+### Building for Production
+
+```bash
+# Build production Docker image
+docker build -t your-app:latest .
+
+# Run production container
+docker run -d \
+  --name your-app \
+  -p 5000:5000 \
+  --env-file .env.production \
+  your-app:latest
+```
 
 ### Dockerfile (Multi-stage Build)
 
@@ -882,6 +2300,71 @@ CMD ["node", "dist/src/main.js"]
 ---
 
 ## 📊 Monitoring Stack
+
+### Overview
+
+The template includes a complete observability stack:
+
+```mermaid
+flowchart LR
+    subgraph Application
+        A[NestJS App]
+        W[Winston Logger]
+    end
+    
+    subgraph Metrics Pipeline
+        P[(Prometheus)]
+    end
+    
+    subgraph Logs Pipeline
+        L[(Loki)]
+    end
+    
+    subgraph Visualization
+        G[Grafana Dashboard]
+    end
+    
+    A -->|metrics| P
+    W -->|logs| L
+    P --> G
+    L --> G
+```
+
+**Data Flow:**
+- **Metrics:** NestJS exposes `/metrics` endpoint → Prometheus scrapes every 15s → Grafana visualizes
+- **Logs:** Winston sends structured logs → Loki stores with labels → Grafana queries with LogQL
+
+### Using the Custom Logger
+
+The template provides a structured logging service:
+
+```typescript
+import { CustomLoggerService } from '../common/services/custom-logger.service';
+
+@Injectable()
+export class YourService {
+  constructor(private readonly logger: CustomLoggerService) {}
+
+  async someMethod() {
+    // Basic logging
+    this.logger.log('Operation started', 'YourService');
+    this.logger.warn('Warning message', 'YourService');
+    this.logger.error('Error occurred', 'stack trace', 'YourService');
+    
+    // Structured logging with metadata
+    this.logger.logUserAction(userId, 'ORDER_PLACED', {
+      orderId: '123',
+      total: 99.99,
+    });
+
+    // Log API requests
+    this.logger.logApiRequest('POST', '/orders', 201, 145); // 145ms
+
+    // Log database queries
+    this.logger.logDatabaseQuery('findMany', 'Order', 23, true); // 23ms, success
+  }
+}
+```
 
 ### Prometheus Metrics
 
@@ -1005,6 +2488,107 @@ test/
 └── jest-e2e.json                  # E2E Jest config
 ```
 
+### Writing Tests
+
+#### Unit Test Example
+
+```typescript
+// src/product/product.service.spec.ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { ProductService } from './product.service';
+import { PrismaService } from '../common/services/prisma.service';
+import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
+
+describe('ProductService', () => {
+  let service: ProductService;
+  let prisma: DeepMockProxy<PrismaService>;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductService,
+        { provide: PrismaService, useValue: mockDeep<PrismaService>() },
+      ],
+    }).compile();
+
+    service = module.get<ProductService>(ProductService);
+    prisma = module.get(PrismaService);
+  });
+
+  describe('findOne', () => {
+    it('should return a product when found', async () => {
+      const mockProduct = { id: '1', name: 'Test', price: 100 };
+      prisma.product.findUnique.mockResolvedValue(mockProduct);
+
+      const result = await service.findOne('1');
+      
+      expect(result).toEqual(mockProduct);
+      expect(prisma.product.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
+    });
+
+    it('should throw NotFound when product does not exist', async () => {
+      prisma.product.findUnique.mockResolvedValue(null);
+
+      await expect(service.findOne('999')).rejects.toThrow('Product not found');
+    });
+  });
+});
+```
+
+#### E2E Test Example
+
+```typescript
+// test/auth.e2e-spec.ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { AppModule } from '../src/app.module';
+
+describe('Auth (e2e)', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  describe('/auth (POST) - Registration', () => {
+    it('should register a new user', () => {
+      return request(app.getHttpServer())
+        .post('/auth')
+        .send({
+          email: 'test@example.com',
+          password: 'SecurePass123!',
+          username: 'testuser',
+        })
+        .expect(201);
+    });
+
+    it('should reject weak password', () => {
+      return request(app.getHttpServer())
+        .post('/auth')
+        .send({
+          email: 'test2@example.com',
+          password: '123',
+          username: 'testuser2',
+        })
+        .expect(400);
+    });
+  });
+});
+```
+
 ---
 
 ## 🚀 Production Deployment
@@ -1052,9 +2636,169 @@ docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 docker exec -it simple_blog_backend npx prisma migrate deploy
 ```
 
-### 4. SSL/TLS (Recommended)
+### 4. SSL/TLS with Nginx
 
-Use a reverse proxy (Nginx, Caddy) or AWS ALB for SSL termination.
+> 🚧 **Coming Soon** - Detailed Nginx reverse proxy configuration with Let's Encrypt SSL certificates will be added in a future update.
+
+---
+
+## 🔧 Troubleshooting
+
+#### 1. Database Connection Failed
+
+**Error:** `Can't reach database server at localhost:5433`
+
+**Solutions:**
+```bash
+# Check if PostgreSQL is running
+docker ps | grep postgres
+
+# Restart PostgreSQL
+docker compose restart postgres_db
+
+# Check DATABASE_URL in .env matches docker-compose ports
+# Default: postgresql://admin:admin@127.0.0.1:5433/simple_blog
+```
+
+#### 2. Redis Connection Failed
+
+**Error:** `Redis connection to localhost:6379 failed`
+
+**Solutions:**
+```bash
+# Check if Redis is running
+docker ps | grep redis
+
+# Restart Redis
+docker compose restart redis-stack
+
+# Verify Redis env variables
+REDIS_HOST=localhost
+REDIS_PORT=6379
+```
+
+#### 3. Prisma Migration Errors
+
+**Error:** `Migration failed to apply`
+
+**Solutions:**
+```bash
+# Reset database (WARNING: deletes all data)
+npx prisma migrate reset
+
+# Generate Prisma client
+npx prisma generate
+
+# Check migration status
+npx prisma migrate status
+```
+
+#### 4. Email Not Sending
+
+**Error:** Verification emails not received
+
+**Solutions:**
+1. Check Gmail App Password (not regular password)
+2. Verify EMAIL_* env variables are set
+3. Check email job in Redis:
+   ```bash
+   # Open RedisInsight at http://localhost:8001
+   # Look for keys starting with "bull:email:"
+   ```
+4. Check application logs for email errors
+
+#### 5. JWT Token Errors
+
+**Error:** `Token has expired` or `Invalid token`
+
+**Causes & Solutions:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Token expired | Access token > 15min old | Use refresh token to get new access token |
+| Invalid token | Secret mismatch | Ensure JWT_SECRET is same across restarts |
+| Token revoked | User logged out or password changed | Login again |
+
+#### 6. Port Already in Use
+
+**Error:** `Port 5000 is already in use`
+
+**Solutions:**
+```bash
+# Find process using port
+lsof -i :5000
+
+# Kill process
+kill -9 <PID>
+
+# Or change port in .env
+PORT=5001
+```
+
+#### 7. Prisma Client Not Generated
+
+**Error:** `@prisma/client did not initialize yet`
+
+**Solutions:**
+```bash
+# Generate Prisma client
+npx prisma generate
+
+# Or reinstall dependencies
+rm -rf node_modules
+npm install
+```
+
+#### 8. Docker Memory Issues
+
+**Error:** Container keeps restarting
+
+**Solutions:**
+```bash
+# Increase Docker memory limit
+# Docker Desktop > Settings > Resources > Memory: 4GB+
+
+# Or reduce services
+docker compose up -d postgres_db redis-stack
+# Start monitoring stack later
+docker compose up -d prometheus grafana loki
+```
+
+### Debug Mode
+
+Enable verbose logging:
+
+```env
+# .env
+NODE_ENV=development
+LOG_LEVEL=debug
+```
+
+Check logs:
+```bash
+# Application logs
+npm run start:dev
+
+# Docker service logs
+docker compose logs -f postgres_db
+docker compose logs -f redis-stack
+
+# All logs
+docker compose logs -f
+```
+
+### Health Check Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /` | App health check |
+| `GET /metrics` | Prometheus metrics |
+
+### Getting Help
+
+1. **Check existing issues:** [GitHub Issues](https://github.com/the-pujon/nestjs-prisma-postgres-starter/issues)
+2. **Read detailed docs:** Check the `docs/` folder
+3. **Open new issue:** Include error logs and steps to reproduce
 
 ---
 
@@ -1086,7 +2830,28 @@ This project is [MIT licensed](LICENSE).
 - [NestJS](https://nestjs.com/) - The progressive Node.js framework
 - [Prisma](https://www.prisma.io/) - Next-generation ORM
 - [PostgreSQL](https://www.postgresql.org/) - The world's most advanced open source database
+- [Redis](https://redis.io/) - In-memory data structure store
+- [BullMQ](https://docs.bullmq.io/) - Premium message queue for Node.js
+- [Prometheus](https://prometheus.io/) - Monitoring system and time series database
+- [Grafana](https://grafana.com/) - Observability platform
+- [Loki](https://grafana.com/oss/loki/) - Log aggregation system
+
+---
+
+## 📚 Additional Resources
+
+- [NestJS Documentation](https://docs.nestjs.com/)
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [BullMQ Documentation](https://docs.bullmq.io/)
+- [JWT.io](https://jwt.io/) - JWT Debugger
+- [Redis Commands](https://redis.io/commands/)
 
 ---
 
 <p align="center">Made with ❤️ by <a href="https://github.com/the-pujon">Pujon Das Auvi</a></p>
+
+<p align="center">
+  <a href="https://github.com/the-pujon/nestjs-prisma-postgres-starter">⭐ Star this repo</a> •
+  <a href="https://github.com/the-pujon/nestjs-prisma-postgres-starter/issues">🐛 Report Bug</a> •
+  <a href="https://github.com/the-pujon/nestjs-prisma-postgres-starter/issues">✨ Request Feature</a>
+</p>
