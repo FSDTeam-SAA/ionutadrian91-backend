@@ -2,13 +2,28 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 
 describe('UserService', () => {
   let service: UserService;
 
+  const mockCustomLoggerService = {
+    log: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    verbose: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UserService],
+      providers: [
+        UserService,
+        {
+          provide: CustomLoggerService,
+          useValue: mockCustomLoggerService,
+        },
+      ],
     }).compile();
 
     service = module.get<UserService>(UserService);

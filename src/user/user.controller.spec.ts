@@ -3,9 +3,11 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CustomLoggerService } from '../common/services/custom-logger.service';
 
 describe('UserController', () => {
   let controller: UserController;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let service: UserService;
 
   const mockUserService = {
@@ -16,6 +18,14 @@ describe('UserController', () => {
     remove: jest.fn(),
   };
 
+  const mockCustomLoggerService = {
+    log: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    verbose: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
@@ -23,6 +33,10 @@ describe('UserController', () => {
         {
           provide: UserService,
           useValue: mockUserService,
+        },
+        {
+          provide: CustomLoggerService,
+          useValue: mockCustomLoggerService,
         },
       ],
     }).compile();
