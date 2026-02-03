@@ -8,6 +8,7 @@ import {
   Res,
   Logger,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { GoogleOAuthService } from './services/google-oauth.service';
@@ -21,6 +22,7 @@ import type { Request, Response } from 'express';
 import { CustomLoggerService } from '../common/services/custom-logger.service';
 import { THROTTLER_CONFIG } from '../common/config/throttler.config';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(

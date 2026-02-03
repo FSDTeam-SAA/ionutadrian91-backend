@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 // import { BlogModule } from './blog/blog.module';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
+import { JobModule } from './job/job.module';
 import { RedisModule } from './common/modules/redis.module';
 import { RateLimitModule } from './common/modules/rate-limit.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -32,6 +33,7 @@ import { LoggerModule } from './common/modules/logger.module';
     // BlogModule,
     AuthModule,
     UserModule,
+    JobModule,
   ],
   controllers: [AppController],
   providers: [AppService],
