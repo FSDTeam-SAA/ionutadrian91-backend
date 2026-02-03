@@ -29,6 +29,7 @@
   - [Database Design](#-database-design)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
+- [API Documentation](#-api-documentation)
 - [Environment Configuration](#-environment-configuration)
 - [API Reference](#-api-reference)
 - [Adding Protected Routes](#-adding-protected-routes)
@@ -795,6 +796,26 @@ nestjs-prisma-postgres-starter/
    - Prometheus: http://localhost:9090
    - Grafana: http://localhost:3000
    - Loki: http://localhost:3100
+
+---
+
+
+## 📚 API Documentation
+
+This project includes **automatic Swagger/OpenAPI documentation** with zero configuration required.
+
+Once the application is running, access the interactive API documentation at:
+
+**👉 [http://localhost:5000/docs](http://localhost:5000/docs)**
+
+### Features:
+- ✅ **Zero decorators required** - DTOs are automatically documented
+- ✅ **Global response format** - Consistent API responses
+- ✅ **JWT authentication** - Bearer token support built-in
+- ✅ **Try it out** - Test endpoints directly from the browser
+- ✅ **Pagination support** - Standard pagination patterns included
+
+For detailed information, see [docs/SWAGGER.md](docs/SWAGGER.md)
 
 ---
 
