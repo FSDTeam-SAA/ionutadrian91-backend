@@ -1,10 +1,11 @@
 import { Module, Global } from '@nestjs/common';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
 import { THROTTLER_CONFIG } from '../config/throttler.config';
+import { CustomThrottlerGuard } from '../guards/custom-throttler.guard';
 
 @Global()
 @Module({
@@ -51,10 +52,11 @@ import { THROTTLER_CONFIG } from '../config/throttler.config';
     }),
   ],
   providers: [
-    // Apply rate limiting globally to all routes
+    // Apply custom rate limiting globally to all routes
+    // This guard skips Swagger, metrics, and other infrastructure endpoints
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CustomThrottlerGuard,
     },
   ],
   exports: [ThrottlerModule],
