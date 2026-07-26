@@ -28,7 +28,8 @@ const config: AppConfig = {
   email_pass: process.env.EMAIL_PASS || '',
   email_from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
   mongodb_uri:
-    process.env.MONGODB_URI || 'mongodb://localhost:27017/ionutadrian91_backend',
+    process.env.MONGODB_URI ||
+    'mongodb://admin:admin@localhost:27017/ionutadrian91_backend?authSource=admin',
 };
 
 export default config;
