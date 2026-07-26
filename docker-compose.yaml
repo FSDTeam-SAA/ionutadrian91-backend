@@ -1,31 +1,32 @@
 # version: '3.8'
 
 services:
-  postgres_db:
-    image: postgres:17.2-alpine
-    container_name: postgres_db
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-ionutadrian91_backend}
     ports:
-      - "${DATABASE_PORT}:5432"
+      - "${MONGODB_PORT:-27017}:27017"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     networks:
       - blog_network
 
-  pg_admin:
-    image: dpage/pgadmin4:latest
-    container_name: pg_admin
+  mongo_express:
+    image: mongo-express:latest
+    container_name: mongo_express
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin}
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH: "false"
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "8081:8081"
     depends_on:
-      - postgres_db
+      - mongodb
     networks:
       - blog_network
 
@@ -62,7 +63,7 @@ services:
       start_period: 10s
     restart: unless-stopped
     depends_on:
-      - postgres_db
+      - mongodb
     networks:
       - blog_network
   # RabbitMQ - Uncomment if you need message broker for microservices
@@ -138,7 +139,7 @@ networks:
     driver: bridge
 
 volumes:
-  db_data:
+  mongo_data:
   redis-stack:
   redis_data:
   rabbitmq_data:

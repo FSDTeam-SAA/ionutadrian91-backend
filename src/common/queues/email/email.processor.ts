@@ -3,7 +3,7 @@ import { Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { EmailJob } from './email.queue';
 import { EmailService } from 'src/common/services/email.service';
-import { PrismaService } from 'src/common/services/prisma.service';
+import { MongoService } from 'src/common/services/mongo.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
@@ -13,7 +13,7 @@ export class EmailProcessor extends WorkerHost {
     @Inject(WINSTON_MODULE_PROVIDER)
     private readonly logger: Logger,
     private readonly emailService: EmailService,
-    private readonly prismaService: PrismaService,
+    private readonly mongoService: MongoService,
   ) {
     super();
   }
@@ -63,7 +63,7 @@ export class EmailProcessor extends WorkerHost {
       );
 
       // Update email history status to 'sent'
-      await this.prismaService.emailHistory.updateMany({
+      await this.mongoService.emailHistory.updateMany({
         where: {
           authId,
           emailType: 'verification',
@@ -87,7 +87,7 @@ export class EmailProcessor extends WorkerHost {
         stack: error instanceof Error ? error.stack : undefined,
       });
       // Update email history status to 'failed'
-      await this.prismaService.emailHistory.updateMany({
+      await this.mongoService.emailHistory.updateMany({
         where: {
           authId,
           emailType: 'verification',

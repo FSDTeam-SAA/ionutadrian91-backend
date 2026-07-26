@@ -5,12 +5,12 @@ export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
     .setTitle('NestJS API')
     .setDescription(
-      'Production-ready NestJS API with Prisma, PostgreSQL, Authentication, Logging, Monitoring, and more.',
+      'Production-ready NestJS API with MongoDB, Authentication, Logging, Monitoring, and more.',
     )
     .setVersion('1.0.0')
     .setContact(
       'API Support',
-      'https://github.com/the-pujon/nestjs-prisma-postgres-starter',
+      'https://github.com/FSDTeam-SAA/ionutadrian91-backend',
       '',
     )
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')

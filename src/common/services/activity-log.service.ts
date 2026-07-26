@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from './prisma.service';
-import { Prisma } from '@prisma/client';
+import { MongoService } from './mongo.service';
 import { CustomLoggerService } from './custom-logger.service';
 
 export interface ActivityLogMetadata {
@@ -19,7 +18,7 @@ export interface FieldChange {
 @Injectable()
 export class ActivityLogService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly mongo: MongoService,
     private readonly customLogger: CustomLoggerService,
   ) {}
 
@@ -43,7 +42,7 @@ export class ActivityLogService {
       changes?: FieldChange[];
       metadata: ActivityLogMetadata;
     },
-    tx?: Prisma.TransactionClient,
+    tx?: MongoService,
   ) {
     const {
       tableName,
@@ -53,9 +52,9 @@ export class ActivityLogService {
       changes = [],
       metadata,
     } = params;
-    const prismaClient = tx || this.prisma;
+    const mongoClient = tx || this.mongo;
 
-    return await prismaClient.activityLogEvent.create({
+    return await mongoClient.activityLogEvent.create({
       data: {
         tableName,
         recordId,
@@ -87,7 +86,7 @@ export class ActivityLogService {
     recordId: string,
     fields: Record<string, any>,
     metadata: ActivityLogMetadata,
-    tx?: Prisma.TransactionClient,
+    tx?: MongoService,
   ) {
     const changes: FieldChange[] = Object.entries(fields).map(
       ([key, value]) => ({
@@ -119,7 +118,7 @@ export class ActivityLogService {
     oldData: Record<string, any>,
     newData: Record<string, any>,
     metadata: ActivityLogMetadata,
-    tx?: Prisma.TransactionClient,
+    tx?: MongoService,
   ) {
     const changes: FieldChange[] = [];
 
@@ -161,7 +160,7 @@ export class ActivityLogService {
     recordId: string,
     deletedData: Record<string, any>,
     metadata: ActivityLogMetadata,
-    tx?: Prisma.TransactionClient,
+    tx?: MongoService,
   ) {
     const changes: FieldChange[] = Object.entries(deletedData).map(
       ([key, value]) => ({
@@ -193,7 +192,7 @@ export class ActivityLogService {
     eventType: 'login' | 'logout' | 'password_change' | 'profile_update',
     metadata: ActivityLogMetadata,
     changes?: FieldChange[],
-    tx?: Prisma.TransactionClient,
+    tx?: MongoService,
   ) {
     // Map eventType to action
     const actionMap = {

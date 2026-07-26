@@ -8,7 +8,7 @@ import type { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 import config from '../config/app.config';
 import { RedisService } from '../services/redis.service';
-import { PrismaService } from '../services/prisma.service';
+import { MongoService } from '../services/mongo.service';
 
 interface IAccessTokenPayload {
   userId: string;
@@ -20,7 +20,7 @@ interface IAccessTokenPayload {
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly redisService: RedisService,
-    private readonly prismaService: PrismaService,
+    private readonly mongoService: MongoService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -79,7 +79,7 @@ export class AuthGuard implements CanActivate {
     }
 
     // Fallback to DB (slow path - only on cache miss)
-    const user = await this.prismaService.authUser.findUnique({
+    const user = await this.mongoService.authUser.findUnique({
       where: { id: userId },
       select: { tokenVersion: true, status: true },
     });

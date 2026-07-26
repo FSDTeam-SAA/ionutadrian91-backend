@@ -115,8 +115,8 @@ export class PaginationDto {
  * Helper function to create paginated response
  *
  * @example
- * const users = await this.prisma.user.findMany({ skip, take });
- * const total = await this.prisma.user.count();
+ * const users = await this.userModel.find().skip(skip).limit(take);
+ * const total = await this.userModel.countDocuments();
  * return createPaginatedResponse(users, total, page, limit);
  */
 export function createPaginatedResponse<T>(
