@@ -1,12 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { ClientPlatform } from '../interfaces/auth.interface';
 
 export class LoginDto {
   @ApiProperty({ example: 'field.user@example.com' })
-  @IsString()
+  @IsEmail()
   @MaxLength(254)
-  identifier: string;
+  email: string;
 
   @ApiProperty({ example: 'StrongerPass123!' })
   @IsString()
