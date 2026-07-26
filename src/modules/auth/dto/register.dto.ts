@@ -1,31 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
-  IsEnum,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { UserRole } from '../../../common/schemas';
 
-export class CreateUserDto {
-  @ApiProperty({ example: 'office.user@example.com' })
+export class RegisterDto {
+  @ApiProperty({ example: 'field.user@example.com' })
   @IsEmail()
   @MaxLength(254)
   email: string;
 
-  @ApiProperty({ example: 'office.user' })
+  @ApiProperty({ example: 'field.user' })
   @IsString()
   @MinLength(3)
   @MaxLength(40)
   @Matches(/^[a-zA-Z0-9._-]+$/)
   username: string;
-
-  @ApiProperty({ enum: UserRole })
-  @IsEnum(UserRole)
-  role: UserRole;
 
   @ApiProperty({ example: 'StrongerPass123!' })
   @IsString()
@@ -33,13 +27,13 @@ export class CreateUserDto {
   @MaxLength(128)
   password: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Field' })
   @IsOptional()
   @IsString()
   @MaxLength(80)
   firstName?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Operator' })
   @IsOptional()
   @IsString()
   @MaxLength(80)

@@ -4,22 +4,27 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
 import { THROTTLER_CONFIG } from '../config/throttler.config';
+import { buildRedisOptions } from '../config/redis.config';
 import { CustomThrottlerGuard } from '../guards/custom-throttler.guard';
 
 @Global()
 @Module({
   imports: [
     ThrottlerModule.forRootAsync({
-      useFactory: (configService: ConfigService) => {
-        // Create Redis client for throttler storage
+      useFactory: (configService: ConfigService, logger: Logger) => {
         const redisClient = new Redis({
-          host: configService.get<string>('REDIS_HOST', 'localhost'),
-          port: configService.get<number>('REDIS_PORT', 6379),
-          username: configService.get<string>('REDIS_USER'),
-          password: configService.get<string>('REDIS_PASSWORD'),
-          db: configService.get<number>('REDIS_DB', 0),
+          ...buildRedisOptions(configService),
           keyPrefix: `${configService.get<string>('REDIS_CACHE_KEY_PREFIX', 'app')}:throttle:`,
+        });
+
+        redisClient.on('error', (error) => {
+          logger.error(`Redis throttler connection error: ${error.message}`, {
+            context: 'RateLimitModule',
+            error: error.message,
+          });
         });
 
         return {
@@ -48,7 +53,7 @@ import { CustomThrottlerGuard } from '../guards/custom-throttler.guard';
           storage: new ThrottlerStorageRedisService(redisClient),
         };
       },
-      inject: [ConfigService],
+      inject: [ConfigService, WINSTON_MODULE_PROVIDER],
     }),
   ],
   providers: [

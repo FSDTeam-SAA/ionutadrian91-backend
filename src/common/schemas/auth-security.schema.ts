@@ -22,6 +22,24 @@ export class AuthSecurity {
 
   @Prop({ type: Date, default: null })
   lastPasswordChange?: Date | null;
+
+  @Prop({ type: String, default: null })
+  emailVerificationOtpHash?: string | null;
+
+  @Prop({ type: Date, default: null })
+  emailVerificationOtpExpiresAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  emailVerificationOtpLastSentAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  passwordResetOtpHash?: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetOtpExpiresAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetOtpLastSentAt?: Date | null;
 }
 
 export const AuthSecuritySchema = SchemaFactory.createForClass(AuthSecurity);

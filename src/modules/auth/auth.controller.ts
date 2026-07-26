@@ -1,377 +1,133 @@
 import {
+  Body,
   Controller,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
   Post,
-  Body,
-  Req,
-  Query,
-  Res,
-  Logger,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
-import { GoogleOAuthService } from './services/google-oauth.service';
-import { CreateAuthDto } from './dto/create-auth.dto';
-// import { UpdateAuthDto } from './dto/update-auth.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { ApiResponseDecorator } from '../../common/decorators';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import {
-  GoogleOAuthInitDto,
-  GoogleOAuthCallbackDto,
-} from './dto/google-oauth.dto';
-import type { Request, Response } from 'express';
-import { CustomLoggerService } from '../../common/services/custom-logger.service';
-import { THROTTLER_CONFIG } from '../../common/config/throttler.config';
+  AuthResponseDto,
+  PublicUserDto,
+  RegisterResponseDto,
+} from './dto/auth-response.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResendOtpDto } from './dto/resend-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { AuthService } from './auth.service';
+import { CurrentUser } from './decorators/current-user.decorator';
+import {
+  ClientPlatform,
+} from './interfaces/auth.interface';
+import type { AuthenticatedUser } from './interfaces/auth.interface';
 
-@ApiTags('auth')
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly googleOAuthService: GoogleOAuthService,
-    private readonly customLogger: CustomLoggerService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
-  // Strict rate limit for registration: 5 requests per 15 minutes
-  @Throttle({ default: THROTTLER_CONFIG.AUTH })
-  @Post()
-  create(@Body() payload: CreateAuthDto, @Req() req: Request) {
-    this.customLogger.log(
-      `Registration attempt for email: ${payload.email}`,
-      'AuthController',
-    );
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      device:
-        (Array.isArray(req.headers['x-device'])
-          ? req.headers['x-device'][0]
-          : req.headers['x-device']) ||
-        (Array.isArray(req.headers['x-device-id'])
-          ? req.headers['x-device-id'][0]
-          : req.headers['x-device-id']) ||
-        (Array.isArray(req.headers['sec-ch-ua-platform'])
-          ? req.headers['sec-ch-ua-platform'][0]
-          : req.headers['sec-ch-ua-platform']),
-    };
-    return this.authService.create(payload, meta);
+  @Post('register')
+  @ApiResponseDecorator(201, 'Field user registered', RegisterResponseDto)
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
-  // Strict rate limit for verification: 5 requests per 15 minutes
-  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post('verify-email')
-  verifyEmail(
-    @Body('email') email: string,
-    @Body('code') code: string,
-    @Req() req: Request,
-  ) {
-    this.customLogger.log(
-      `Email verification attempt for: ${email}`,
-      'AuthController',
-    );
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-    };
-    return this.authService.verifyEmail(email, code, meta);
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'Email verified')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
-  // Strict rate limit: 5 requests per 15 minutes
-  @Throttle({ default: THROTTLER_CONFIG.AUTH })
-  @Post('resend-verification-email')
-  resendVerificationEmail(@Body('email') email: string, @Req() req: Request) {
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-    };
-    return this.authService.resendVerificationEmail(email, meta);
-  }
-
-  // ==========================================
-  // Google OAuth Endpoints
-  // ==========================================
-
-  /**
-   * Initiate Google OAuth flow
-   * Returns the Google authorization URL for the client to redirect to
-   *
-   * @example GET /auth/google
-   * @example GET /auth/google?redirectUrl=http://localhost:3000/dashboard
-   */
-  @Get('google')
-  async googleOAuthInit(
-    @Query() query: GoogleOAuthInitDto,
-    @Req() req: Request,
-  ) {
-    this.customLogger.log(
-      'Google OAuth initialization requested',
-      'AuthController',
-    );
-
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-    };
-
-    const { url, state } = await this.googleOAuthService.getAuthorizationUrl(
-      meta,
-      query.redirectUrl,
-    );
-
-    return {
-      url,
-      state,
-      message: 'Redirect to the provided URL to authenticate with Google',
-    };
-  }
-
-  /**
-   * Google OAuth callback handler
-   * This endpoint is called by Google after user authentication
-   *
-   * For browser-based flows, this redirects to the frontend
-   * For API-based flows, returns JSON with tokens
-   */
-  @Get('google/callback')
-  async googleOAuthCallback(
-    @Query('code') code: string,
-    @Query('state') state: string,
-    @Query('error') error: string,
-    @Query('error_description') errorDescription: string,
-    @Req() req: Request,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    // Handle OAuth errors
-    if (error) {
-      this.customLogger.warn(
-        `Google OAuth error: ${error} - ${errorDescription}`,
-        'AuthController',
-      );
-      Logger.warn(
-        `Google OAuth error: ${error} - ${errorDescription}`,
-        'AuthController',
-      );
-
-      // For browser redirect, you might want to redirect to an error page
-      return {
-        success: false,
-        error,
-        errorDescription,
-        message: 'Google authentication failed',
-      };
-    }
-
-    if (!code || !state) {
-      return {
-        success: false,
-        error: 'missing_parameters',
-        message: 'Missing authorization code or state parameter',
-      };
-    }
-
-    this.customLogger.log('Google OAuth callback received', 'AuthController');
-    Logger.log('Google OAuth callback received', 'AuthController');
-
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      device:
-        (Array.isArray(req.headers['x-device'])
-          ? req.headers['x-device'][0]
-          : req.headers['x-device']) ||
-        (Array.isArray(req.headers['x-device-id'])
-          ? req.headers['x-device-id'][0]
-          : req.headers['x-device-id']) ||
-        (Array.isArray(req.headers['sec-ch-ua-platform'])
-          ? req.headers['sec-ch-ua-platform'][0]
-          : req.headers['sec-ch-ua-platform']),
-    };
-
-    const result = await this.googleOAuthService.handleCallback(
-      code,
-      state,
-      meta,
-    );
-
-    // If redirectUrl is provided, redirect to it with tokens as query params
-    if (result.redirectUrl) {
-      const redirectUrl = new URL(result.redirectUrl);
-      redirectUrl.searchParams.set('access_token', result.accessToken);
-      redirectUrl.searchParams.set('refresh_token', result.refreshToken);
-      redirectUrl.searchParams.set('user_id', result.user.id);
-      redirectUrl.searchParams.set('email', result.user.email);
-      redirectUrl.searchParams.set('is_new_user', result.isNewUser.toString());
-
-      return res.redirect(redirectUrl.toString());
-    }
-
-    // Otherwise return JSON response
-    return {
-      success: true,
-      message: result.isNewUser
-        ? 'Account created successfully via Google'
-        : 'Signed in successfully via Google',
-      data: result,
-    };
-  }
-
-  /**
-   * Alternative POST endpoint for Google OAuth callback
-   * Useful for mobile apps or SPAs that handle the callback differently
-   */
-  @Post('google/callback')
-  async googleOAuthCallbackPost(
-    @Body() body: GoogleOAuthCallbackDto,
-    @Req() req: Request,
-  ) {
-    this.customLogger.log(
-      'Google OAuth callback (POST) received',
-      'AuthController',
-    );
-
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      device:
-        (Array.isArray(req.headers['x-device'])
-          ? req.headers['x-device'][0]
-          : req.headers['x-device']) ||
-        (Array.isArray(req.headers['x-device-id'])
-          ? req.headers['x-device-id'][0]
-          : req.headers['x-device-id']) ||
-        (Array.isArray(req.headers['sec-ch-ua-platform'])
-          ? req.headers['sec-ch-ua-platform'][0]
-          : req.headers['sec-ch-ua-platform']),
-    };
-
-    const result = await this.googleOAuthService.handleCallback(
-      body.code,
-      body.state,
-      meta,
-    );
-
-    return {
-      success: true,
-      message: result.isNewUser
-        ? 'Account created successfully via Google'
-        : 'Signed in successfully via Google',
-      data: result,
-    };
-  }
-
-  // ==========================================
-  // Login/Logout Endpoints
-  // ==========================================
-
-  /**
-   * Login with email and password
-   */
-  // Strict rate limit for login: 5 requests per 15 minutes per IP
-  @Throttle({ default: THROTTLER_CONFIG.AUTH })
   @Post('login')
-  async login(
-    @Body('email') email: string,
-    @Body('password') password: string,
-    @Req() req: Request,
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'User logged in', AuthResponseDto)
+  login(
+    @Body() dto: LoginDto,
+    @Headers('x-client-platform') platform?: ClientPlatform,
   ) {
-    this.customLogger.log(
-      `Login attempt for email: ${email}`,
-      'AuthController',
-    );
-
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      device:
-        (Array.isArray(req.headers['x-device'])
-          ? req.headers['x-device'][0]
-          : req.headers['x-device']) ||
-        (Array.isArray(req.headers['x-device-id'])
-          ? req.headers['x-device-id'][0]
-          : req.headers['x-device-id']) ||
-        (Array.isArray(req.headers['sec-ch-ua-platform'])
-          ? req.headers['sec-ch-ua-platform'][0]
-          : req.headers['sec-ch-ua-platform']),
-    };
-
-    const result = await this.authService.login({ email, password }, meta);
-
-    return {
-      success: true,
-      message: 'Login successful',
-      data: result,
-    };
+    return this.authService.login({
+      ...dto,
+      clientPlatform: dto.clientPlatform || platform || ClientPlatform.Web,
+    });
   }
 
-  /**
-   * Refresh access token using refresh token
-   */
-  @Post('refresh-token')
-  async refreshToken(
-    @Body('refreshToken') refreshToken: string,
-    @Req() req: Request,
-  ) {
-    this.customLogger.log('Token refresh requested', 'AuthController');
-
-    const meta = {
-      ip: req.ip || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown',
-      device:
-        (Array.isArray(req.headers['x-device'])
-          ? req.headers['x-device'][0]
-          : req.headers['x-device']) ||
-        (Array.isArray(req.headers['x-device-id'])
-          ? req.headers['x-device-id'][0]
-          : req.headers['x-device-id']) ||
-        (Array.isArray(req.headers['sec-ch-ua-platform'])
-          ? req.headers['sec-ch-ua-platform'][0]
-          : req.headers['sec-ch-ua-platform']),
-    };
-
-    const result = await this.authService.refreshToken(refreshToken, meta);
-
-    return {
-      success: true,
-      message: 'Token refreshed successfully',
-      data: result,
-    };
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'Tokens refreshed')
+  refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto.refreshToken);
   }
 
-  /**
-   * Logout current session
-   */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'Password reset OTP sent when account exists')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'OTP resent')
+  resendOtp(@Body() dto: ResendOtpDto) {
+    return this.authService.resendOtp(dto);
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(200, 'Password changed')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
+  }
+
   @Post('logout')
-  async logout(
-    @Body('refreshToken') refreshToken: string,
-    @Body('userId') userId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    @Req() req: Request,
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiResponseDecorator(200, 'User logged out')
+  logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: Partial<RefreshTokenDto>,
   ) {
-    this.customLogger.log('Logout requested', 'AuthController');
-
-    const result = await this.authService.logout(refreshToken, userId);
-
-    return {
-      success: true,
-      ...result,
-    };
+    return this.authService.logout(user.userId, dto.refreshToken);
   }
 
-  /**
-   * Logout from all devices
-   */
   @Post('logout-all')
-  async logoutAll(@Body('userId') userId: string) {
-    this.customLogger.log(
-      `Logout all devices requested for user: ${userId}`,
-      'AuthController',
-    );
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiResponseDecorator(200, 'User logged out from all devices')
+  logoutAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.logoutAll(user.userId);
+  }
 
-    const result = await this.authService.logoutAllDevices(userId);
+  @Post('me/change-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiResponseDecorator(200, 'Password changed')
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user, dto);
+  }
 
-    return {
-      success: true,
-      ...result,
-    };
+  @Get('me')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiResponseDecorator(200, 'Current user retrieved', PublicUserDto)
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.getMe(user.userId);
   }
 }

@@ -33,6 +33,9 @@ export class EmailProcessor extends WorkerHost {
         case 'welcome':
           await this.handleWelcomeEmail(job);
           break;
+        case 'password-reset':
+          await this.handlePasswordResetEmail(job);
+          break;
         default:
           this.logger.warn(
             `Unknown email job type: ${String((job.data as { type?: string }).type || 'undefined')}`,
@@ -123,6 +126,45 @@ export class EmailProcessor extends WorkerHost {
       });
       // Don't throw for welcome emails - they're non-critical
       // Just log the error and mark job as complete
+    }
+  }
+
+  private async handlePasswordResetEmail(job: Job<EmailJob>): Promise<void> {
+    const data = job.data as Extract<EmailJob, { type: 'password-reset' }>;
+    const { email, username, resetCode, authId } = data;
+
+    try {
+      await this.emailService.sendPasswordResetEmail(email, username, resetCode);
+      await this.mongoService.emailHistory.updateMany({
+        where: {
+          authId,
+          emailType: 'password_reset',
+          emailStatus: 'pending',
+        },
+        data: {
+          emailStatus: 'sent',
+        },
+      });
+
+      this.logger.info(`Password reset email sent successfully to ${email}`, {
+        context: 'EmailProcessor',
+        jobId: job.id,
+        email,
+      });
+    } catch (error) {
+      await this.mongoService.emailHistory.updateMany({
+        where: {
+          authId,
+          emailType: 'password_reset',
+          emailStatus: 'pending',
+        },
+        data: {
+          emailStatus: 'failed',
+          errorMessage:
+            error instanceof Error ? error.message : 'Failed to send email',
+        },
+      });
+      throw error;
     }
   }
 }

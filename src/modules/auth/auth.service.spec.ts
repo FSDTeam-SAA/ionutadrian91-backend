@@ -1,70 +1,16 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { AuthService } from './auth.service';
-import { AuthUtilsService } from './services/auth-utils.service';
-import { MongoService } from '../../common/services/mongo.service';
-import { ActivityLogService } from '../../common/services/activity-log.service';
-import { RedisService } from '../../common/services/redis.service';
-import { EmailQueueService } from '../../common/queues/email/email.queue';
-import { CustomLoggerService } from '../../common/services/custom-logger.service';
-import AppError from '../../common/errors/app.error';
+import { ForbiddenException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-
-// Mock the AUTH_CONFIG to use numeric values for VERIFICATION
-jest.mock('./config/auth.config', () => ({
-  AUTH_CONFIG: {
-    PASSWORD_MIN_LENGTH: 8,
-    PASSWORD_REQUIREMENTS: {
-      UPPERCASE: true,
-      LOWERCASE: true,
-      NUMBERS: true,
-      SPECIAL_CHARS: true,
-    },
-    TOKEN_EXPIRY: {
-      ACCESS: '15m',
-      REFRESH: '7d',
-      VERIFICATION: '1440', // 24 hours in minutes as a string number
-      PASSWORD_RESET: '1h',
-    },
-    RATE_LIMIT: {
-      LOGIN_MAX_ATTEMPTS: 5,
-      LOGIN_WINDOW_MS: 15 * 60 * 1000,
-      PASSWORD_RESET_MAX_ATTEMPTS: 3,
-      PASSWORD_RESET_WINDOW_MS: 60 * 60 * 1000,
-    },
-    ACCOUNT_LOCKOUT: {
-      MAX_FAILED_ATTEMPTS: 5,
-      LOCKOUT_DURATION_MS: 30 * 60 * 1000,
-    },
-    SESSION: {
-      MAX_DEVICES_PER_USER: 5,
-    },
-    ROLE_HIERARCHY: {
-      CUSTOMER: 1,
-      MODERATOR: 2,
-      ADMIN: 3,
-      SUPER_ADMIN: 4,
-    },
-    CACHE_PREFIXES: {
-      VERIFICATION_TOKEN: 'verification',
-      PASSWORD_RESET_TOKEN: 'password_reset',
-      REFRESH_TOKEN: 'refresh_token',
-      USER_SESSIONS: 'user_sessions',
-    },
-  },
-}));
+import { AuthService } from './auth.service';
+import { UserRole, UserStatus } from '../../common/schemas';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let mongoService: jest.Mocked<MongoService>;
-  let authUtilsService: jest.Mocked<AuthUtilsService>;
-  let activityLogService: jest.Mocked<ActivityLogService>;
-  let redisService: jest.Mocked<RedisService>;
-  let emailQueueService: jest.Mocked<EmailQueueService>;
+  let mongo: any;
+  let redis: any;
+  let emailQueue: any;
 
-  const mockTransaction = jest.fn();
-
-  beforeEach(async () => {
-    const mockMongoService = {
+  beforeEach(() => {
+    mongo = {
       authUser: {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -73,429 +19,141 @@ describe('AuthService', () => {
       },
       authSecurity: {
         create: jest.fn(),
-        findUnique: jest.fn(),
         update: jest.fn(),
+      },
+      userProfile: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
       },
       emailHistory: {
         create: jest.fn(),
-        updateMany: jest.fn(),
       },
-      $transaction: mockTransaction,
     };
-
-    const mockAuthUtilsService = {
-      checkRateLimit: jest.fn(),
-      validatePassword: jest.fn(),
-      generateVerificationCode: jest.fn(),
-      hashToken: jest.fn(),
-      createAccessToken: jest.fn(),
-      createRefreshToken: jest.fn(),
-      generateSecureId: jest.fn(),
-    };
-
-    const mockActivityLogService = {
-      logCreate: jest.fn(),
-      logUpdate: jest.fn(),
-      logCustomEvent: jest.fn(),
-    };
-
-    const mockRedisService = {
-      set: jest.fn(),
+    redis = {
       get: jest.fn(),
+      set: jest.fn(),
       del: jest.fn(),
+      deleteByPattern: jest.fn(),
     };
-
-    const mockEmailQueueService = {
+    emailQueue = {
       sendVerificationEmail: jest.fn(),
       sendWelcomeEmail: jest.fn(),
+      sendPasswordResetEmail: jest.fn(),
     };
 
-    const mockCustomLoggerService = {
-      log: jest.fn(),
-      error: jest.fn(),
-      warn: jest.fn(),
-      debug: jest.fn(),
-      verbose: jest.fn(),
-    };
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        AuthService,
-        {
-          provide: AuthUtilsService,
-          useValue: mockAuthUtilsService,
-        },
-        {
-          provide: MongoService,
-          useValue: mockMongoService,
-        },
-        {
-          provide: ActivityLogService,
-          useValue: mockActivityLogService,
-        },
-        {
-          provide: RedisService,
-          useValue: mockRedisService,
-        },
-        {
-          provide: EmailQueueService,
-          useValue: mockEmailQueueService,
-        },
-        {
-          provide: CustomLoggerService,
-          useValue: mockCustomLoggerService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<AuthService>(AuthService);
-    mongoService = module.get(MongoService);
-    authUtilsService = module.get(AuthUtilsService);
-    activityLogService = module.get(ActivityLogService);
-    redisService = module.get(RedisService);
-    emailQueueService = module.get(EmailQueueService);
+    service = new AuthService(mongo, redis, emailQueue);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  it('hashes the password and sends verification OTP during registration', async () => {
+    mongo.authUser.findFirst.mockResolvedValue(null);
+    mongo.authUser.create.mockImplementation(({ data }) =>
+      Promise.resolve({
+        id: 'user-1',
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    );
+    mongo.userProfile.findFirst.mockResolvedValue({
+      firstName: 'Field',
+      lastName: 'Operator',
+    });
+    mongo.authUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: false,
+      provider: 'local',
+      tokenVersion: 0,
+    });
+
+    const result = await service.register({
+      email: 'field@example.com',
+      username: 'field.user',
+      password: 'StrongerPass123!',
+      firstName: 'Field',
+      lastName: 'Operator',
+    });
+
+    const savedPassword = mongo.authUser.create.mock.calls[0][0].data.password;
+    expect(savedPassword).not.toBe('StrongerPass123!');
+    await expect(bcrypt.compare('StrongerPass123!', savedPassword)).resolves.toBe(
+      true,
+    );
+    expect(emailQueue.sendVerificationEmail).toHaveBeenCalled();
+    expect(result.verificationRequired).toBe(true);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  it('blocks login before email verification', async () => {
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      password: await bcrypt.hash('StrongerPass123!', 4),
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: false,
+      provider: 'local',
+      tokenVersion: 0,
+    });
+
+    await expect(
+      service.login({
+        identifier: 'field@example.com',
+        password: 'StrongerPass123!',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  describe('create', () => {
-    const createAuthDto = {
-      email: 'test@example.com',
-      username: 'testuser',
-      password: 'Test@1234',
-    };
+  it('resets password with OTP, hashes it, and revokes existing tokens', async () => {
+    const otpHash = await bcrypt.hash('123456', 4);
+    const oldPasswordHash = await bcrypt.hash('OldPass123!', 4);
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      password: oldPasswordHash,
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: true,
+      provider: 'local',
+      tokenVersion: 0,
+      authSecurity: {
+        passwordResetOtpHash: otpHash,
+        passwordResetOtpExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    mongo.authUser.update.mockImplementation(({ data }) =>
+      Promise.resolve({
+        id: 'user-1',
+        tokenVersion: 1,
+        password: data.password,
+      }),
+    );
 
-    const meta = {
-      ip: '127.0.0.1',
-      userAgent: 'Jest Test Agent',
-      device: 'test-device',
-    };
-
-    it('should create a new user successfully', async () => {
-      // Mock dependencies
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      authUtilsService.validatePassword.mockReturnValue(true);
-      authUtilsService.generateVerificationCode.mockReturnValue('123456');
-      mongoService.authUser.findFirst.mockResolvedValue(null);
-
-      const mockUser = {
-        id: 'user-123',
-        email: createAuthDto.email,
-        username: createAuthDto.username,
-      };
-
-      mockTransaction.mockImplementation(async (callback) => {
-        return callback({
-          authUser: {
-            create: jest.fn().mockResolvedValue(mockUser),
-          },
-          authSecurity: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-          emailHistory: {
-            create: jest.fn().mockResolvedValue({}),
-          },
-        });
-      });
-
-      redisService.set.mockResolvedValue(undefined);
-      emailQueueService.sendVerificationEmail.mockResolvedValue(undefined);
-
-      // Execute
-      await service.create(createAuthDto, meta);
-
-      // Assertions
-      expect(authUtilsService.checkRateLimit).toHaveBeenCalledTimes(2);
-      expect(authUtilsService.validatePassword).toHaveBeenCalledWith(
-        createAuthDto.password,
-      );
-      expect(mongoService.authUser.findFirst).toHaveBeenCalledWith({
-        where: {
-          OR: [
-            { email: createAuthDto.email },
-            { username: createAuthDto.username },
-          ],
-        },
-      });
-      expect(mockTransaction).toHaveBeenCalled();
-      expect(redisService.set).toHaveBeenCalled();
-      expect(emailQueueService.sendVerificationEmail).toHaveBeenCalledWith(
-        createAuthDto.email,
-        createAuthDto.username,
-        '123456',
-        mockUser.id,
-      );
+    await service.resetPassword({
+      email: 'field@example.com',
+      otp: '123456',
+      newPassword: 'NewPass123!',
     });
 
-    it('should throw error if password is weak', async () => {
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      authUtilsService.validatePassword.mockReturnValue(false);
-
-      await expect(service.create(createAuthDto, meta)).rejects.toThrow(
-        'Password does not meet security requirements',
-      );
-
-      expect(authUtilsService.validatePassword).toHaveBeenCalledWith(
-        createAuthDto.password,
-      );
+    const savedPassword = mongo.authUser.update.mock.calls[0][0].data.password;
+    expect(savedPassword).not.toBe('NewPass123!');
+    await expect(bcrypt.compare('NewPass123!', savedPassword)).resolves.toBe(true);
+    expect(mongo.authUser.update.mock.calls[0][0].data.tokenVersion).toEqual({
+      increment: 1,
     });
-
-    it('should throw error if email already exists', async () => {
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      authUtilsService.validatePassword.mockReturnValue(true);
-      mongoService.authUser.findFirst.mockResolvedValue({
-        id: 'existing-user',
-        email: createAuthDto.email,
-        username: 'different-username',
-      } as any);
-
-      await expect(service.create(createAuthDto, meta)).rejects.toThrow(
-        'Email already exists!',
-      );
-    });
-
-    it('should throw error if username already exists', async () => {
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      authUtilsService.validatePassword.mockReturnValue(true);
-      mongoService.authUser.findFirst.mockResolvedValue({
-        id: 'existing-user',
-        email: 'different@example.com',
-        username: createAuthDto.username,
-      } as any);
-
-      await expect(service.create(createAuthDto, meta)).rejects.toThrow(
-        'Username already exists!',
-      );
-    });
-
-    it('should handle rate limiting', async () => {
-      authUtilsService.checkRateLimit.mockRejectedValue(
-        AppError.tooManyRequests('Too many attempts'),
-      );
-
-      await expect(service.create(createAuthDto, meta)).rejects.toThrow();
-      expect(authUtilsService.checkRateLimit).toHaveBeenCalled();
-    });
+    expect(redis.deleteByPattern).toHaveBeenCalledWith('app:refresh:user-1:*');
   });
 
-  describe('verifyEmail', () => {
-    const email = 'test@example.com';
-    const code = '123456';
-    const meta = {
-      ip: '127.0.0.1',
-      userAgent: 'Jest Test Agent',
-    };
+  it('does not reveal missing accounts in forgot password', async () => {
+    mongo.authUser.findFirst.mockResolvedValue(null);
 
-    it('should verify email successfully', async () => {
-      const mockVerificationData = {
-        code: '123456',
-        userId: 'user-123',
-        email,
-        expiresAt: new Date(Date.now() + 10000).toISOString(),
-      };
-
-      const mockUser = {
-        id: 'user-123',
-        email,
-        username: 'testuser',
-        verified: false,
-      };
-
-      redisService.get.mockResolvedValue(mockVerificationData);
-      mongoService.authUser.findUnique.mockResolvedValue(mockUser as any);
-
-      mockTransaction.mockImplementation(async (callback) => {
-        return callback({
-          authUser: {
-            update: jest
-              .fn()
-              .mockResolvedValue({ ...mockUser, verified: true }),
-          },
-        });
-      });
-
-      redisService.del.mockResolvedValue(1);
-      emailQueueService.sendWelcomeEmail.mockResolvedValue(undefined);
-
-      const result = await service.verifyEmail(email, code, meta);
-
-      expect(result).toEqual({ message: 'Email verified successfully' });
-      expect(redisService.get).toHaveBeenCalled();
-      expect(mongoService.authUser.findUnique).toHaveBeenCalledWith({
-        where: { email },
-      });
-      expect(mockTransaction).toHaveBeenCalled();
-      expect(redisService.del).toHaveBeenCalled();
-      expect(emailQueueService.sendWelcomeEmail).toHaveBeenCalledWith(
-        email,
-        mockUser.username,
-        mockUser.id,
-      );
-    });
-
-    it('should throw error if verification code is expired or not found', async () => {
-      redisService.get.mockResolvedValue(null);
-
-      await expect(service.verifyEmail(email, code, meta)).rejects.toThrow(
-        'Verification code expired or invalid',
-      );
-    });
-
-    it('should throw error if verification code is invalid', async () => {
-      const mockVerificationData = {
-        code: '654321', // Different code
-        userId: 'user-123',
-        email,
-        expiresAt: new Date(Date.now() + 10000).toISOString(),
-      };
-
-      redisService.get.mockResolvedValue(mockVerificationData);
-
-      await expect(service.verifyEmail(email, code, meta)).rejects.toThrow(
-        'Invalid verification code',
-      );
-    });
-
-    it('should throw error if user not found', async () => {
-      const mockVerificationData = {
-        code: '123456',
-        userId: 'user-123',
-        email,
-        expiresAt: new Date(Date.now() + 10000).toISOString(),
-      };
-
-      redisService.get.mockResolvedValue(mockVerificationData);
-      mongoService.authUser.findUnique.mockResolvedValue(null);
-
-      await expect(service.verifyEmail(email, code, meta)).rejects.toThrow(
-        'User not found',
-      );
-    });
-
-    it('should throw error if email is already verified', async () => {
-      const mockVerificationData = {
-        code: '123456',
-        userId: 'user-123',
-        email,
-        expiresAt: new Date(Date.now() + 10000).toISOString(),
-      };
-
-      const mockUser = {
-        id: 'user-123',
-        email,
-        username: 'testuser',
-        verified: true, // Already verified
-      };
-
-      redisService.get.mockResolvedValue(mockVerificationData);
-      mongoService.authUser.findUnique.mockResolvedValue(mockUser as any);
-
-      await expect(service.verifyEmail(email, code, meta)).rejects.toThrow(
-        'Email already verified',
-      );
-    });
-  });
-
-  describe('resendVerificationEmail', () => {
-    const email = 'test@example.com';
-    const meta = {
-      ip: '127.0.0.1',
-      userAgent: 'Jest Test Agent',
-    };
-
-    it('should resend verification email successfully', async () => {
-      const mockUser = {
-        id: 'user-123',
-        email,
-        username: 'testuser',
-        verified: false,
-      };
-
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      mongoService.authUser.findUnique.mockResolvedValue(mockUser as any);
-      authUtilsService.generateVerificationCode.mockReturnValue('654321');
-      redisService.set.mockResolvedValue(undefined);
-      mongoService.emailHistory.create.mockResolvedValue({} as any);
-      emailQueueService.sendVerificationEmail.mockResolvedValue(undefined);
-
-      const result = await service.resendVerificationEmail(email, meta);
-
-      expect(result).toEqual({
-        message: 'Verification email sent successfully',
-      });
-      expect(authUtilsService.checkRateLimit).toHaveBeenCalled();
-      expect(mongoService.authUser.findUnique).toHaveBeenCalledWith({
-        where: { email },
-      });
-      expect(redisService.set).toHaveBeenCalled();
-      expect(emailQueueService.sendVerificationEmail).toHaveBeenCalled();
-    });
-
-    it('should throw error if user not found', async () => {
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      mongoService.authUser.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.resendVerificationEmail(email, meta),
-      ).rejects.toThrow('User not found');
-    });
-
-    it('should throw error if email is already verified', async () => {
-      const mockUser = {
-        id: 'user-123',
-        email,
-        username: 'testuser',
-        verified: true, // Already verified
-      };
-
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      mongoService.authUser.findUnique.mockResolvedValue(mockUser as any);
-
-      await expect(
-        service.resendVerificationEmail(email, meta),
-      ).rejects.toThrow('Email already verified');
-    });
-
-    it('should handle rate limiting', async () => {
-      authUtilsService.checkRateLimit.mockRejectedValue(
-        AppError.tooManyRequests('Too many attempts'),
-      );
-
-      await expect(
-        service.resendVerificationEmail(email, meta),
-      ).rejects.toThrow();
-    });
-
-    it('should throw error if email queue fails', async () => {
-      const mockUser = {
-        id: 'user-123',
-        email,
-        username: 'testuser',
-        verified: false,
-      };
-
-      authUtilsService.checkRateLimit.mockResolvedValue(undefined);
-      mongoService.authUser.findUnique.mockResolvedValue(mockUser as any);
-      authUtilsService.generateVerificationCode.mockReturnValue('654321');
-      redisService.set.mockResolvedValue(undefined);
-      mongoService.emailHistory.create.mockResolvedValue({} as any);
-      mongoService.emailHistory.updateMany.mockResolvedValue({
-        count: 1,
-      } as any);
-      emailQueueService.sendVerificationEmail.mockRejectedValue(
-        new Error('Queue error'),
-      );
-
-      await expect(
-        service.resendVerificationEmail(email, meta),
-      ).rejects.toThrow('Failed to send verification email');
-      expect(mongoService.emailHistory.updateMany).toHaveBeenCalled();
-    });
+    await expect(
+      service.forgotPassword({ email: 'missing@example.com' }),
+    ).resolves.toEqual({ otpSentIfAccountExists: true });
+    expect(emailQueue.sendPasswordResetEmail).not.toHaveBeenCalled();
   });
 });

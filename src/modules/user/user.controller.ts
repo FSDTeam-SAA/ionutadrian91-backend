@@ -1,63 +1,86 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { UserService } from './user.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { CustomLoggerService } from '../../common/services/custom-logger.service';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { AuthGuard } from '../../common/guards/auth.guard';
 import {
-  ApiResponseDecorator,
   ApiArrayResponseDecorator,
+  ApiResponseDecorator,
 } from '../../common/decorators';
-import { User } from './entities/user.entity';
+import { UserRole } from '../../common/schemas';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../auth/interfaces/auth.interface';
+import { CreateUserDto } from './dto/create-user.dto';
+import { ListUsersDto } from './dto/list-users.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UserEntity } from './entities/user.entity';
+import { UserService } from './user.service';
 
-@ApiTags('users')
-@Controller('user')
+@ApiTags('Users')
+@ApiBearerAuth()
+@Controller('users')
+@UseGuards(AuthGuard, RolesGuard)
 export class UserController {
-  constructor(
-    private readonly userService: UserService,
-    private readonly customLogger: CustomLoggerService,
-  ) {}
+  constructor(private readonly userService: UserService) {}
 
-  @ApiOperation({ summary: 'Create a new user' })
-  @ApiResponseDecorator(201, 'User created successfully', User)
+  @Get('me')
+  @ApiResponseDecorator(200, 'Own profile retrieved', UserEntity)
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return this.userService.findOne(user.userId);
+  }
+
+  @Patch('me')
+  @ApiResponseDecorator(200, 'Own profile updated', UserEntity)
+  updateMe(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.userService.updateOwnProfile(user.userId, dto);
+  }
+
   @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.userService.create(createUserDto);
+  @Roles(UserRole.Administrator)
+  @ApiResponseDecorator(201, 'User created', UserEntity)
+  create(@Body() dto: CreateUserDto) {
+    return this.userService.create(dto);
   }
 
-  @ApiOperation({ summary: 'Get all users' })
-  @ApiArrayResponseDecorator(200, 'Users retrieved successfully', User)
   @Get()
-  findAll() {
-    return this.userService.findAll();
+  @Roles(UserRole.Administrator, UserRole.Office)
+  @ApiArrayResponseDecorator(200, 'Users retrieved', UserEntity)
+  findAll(@Query() query: ListUsersDto) {
+    return this.userService.findAll(query);
   }
 
-  @ApiOperation({ summary: 'Get user by ID' })
-  @ApiResponseDecorator(200, 'User retrieved successfully', User)
   @Get(':id')
+  @Roles(UserRole.Administrator, UserRole.Office)
+  @ApiResponseDecorator(200, 'User retrieved', UserEntity)
   findOne(@Param('id') id: string) {
-    return this.userService.findOne(+id);
+    return this.userService.findOne(id);
   }
 
-  @ApiOperation({ summary: 'Update user by ID' })
-  @ApiResponseDecorator(200, 'User updated successfully', User)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(+id, updateUserDto);
+  @Roles(UserRole.Administrator)
+  @ApiResponseDecorator(200, 'User updated', UserEntity)
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.userService.update(id, dto);
   }
 
-  @ApiOperation({ summary: 'Delete user by ID' })
-  @ApiResponseDecorator(200, 'User deleted successfully')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.userService.remove(+id);
+  @Roles(UserRole.Administrator)
+  @ApiResponseDecorator(200, 'User deactivated')
+  deactivate(@Param('id') id: string) {
+    return this.userService.deactivate(id);
   }
 }

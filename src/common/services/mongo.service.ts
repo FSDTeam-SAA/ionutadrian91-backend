@@ -20,6 +20,9 @@ type QueryArgs = {
   where?: Record<string, unknown>;
   data?: Record<string, unknown>;
   select?: Record<string, unknown>;
+  orderBy?: Record<string, 'asc' | 'desc'>;
+  skip?: number;
+  take?: number;
 };
 
 @Injectable()
@@ -27,6 +30,8 @@ export class MongoService {
   readonly authUser = {
     findFirst: (args: QueryArgs) => this.findOne(this.authUserModel, args),
     findUnique: (args: QueryArgs) => this.findOne(this.authUserModel, args),
+    findMany: (args: QueryArgs = {}) => this.findMany(this.authUserModel, args),
+    count: (args: QueryArgs = {}) => this.count(this.authUserModel, args),
     create: (args: QueryArgs) => this.create(this.authUserModel, args),
     update: (args: QueryArgs) => this.updateOne(this.authUserModel, args),
   };
@@ -51,7 +56,9 @@ export class MongoService {
   };
 
   readonly userProfile = {
+    findFirst: (args: QueryArgs) => this.findOne(this.userProfileModel, args),
     create: (args: QueryArgs) => this.create(this.userProfileModel, args),
+    update: (args: QueryArgs) => this.updateOne(this.userProfileModel, args),
   };
 
   constructor(
@@ -91,6 +98,39 @@ export class MongoService {
     const doc = await model.create(this.normalizeData(args.data || {}) as any);
     const serialized = this.serialize(doc);
     return args.select ? this.pickSelected(serialized, args.select) : serialized;
+  }
+
+  private async findMany<T>(model: Model<T>, args: QueryArgs) {
+    const query = model.find(this.toMongoFilter(args.where));
+    if (args.select) {
+      query.select(this.toProjection(args.select));
+    }
+
+    if (args.orderBy) {
+      query.sort(
+        Object.fromEntries(
+          Object.entries(args.orderBy).map(([key, direction]) => [
+            key === 'id' ? '_id' : key,
+            direction === 'desc' ? -1 : 1,
+          ]),
+        ),
+      );
+    }
+
+    if (typeof args.skip === 'number') {
+      query.skip(args.skip);
+    }
+
+    if (typeof args.take === 'number') {
+      query.limit(args.take);
+    }
+
+    const docs = await query.exec();
+    return docs.map((doc) => this.serialize(doc));
+  }
+
+  private async count<T>(model: Model<T>, args: QueryArgs) {
+    return model.countDocuments(this.toMongoFilter(args.where)).exec();
   }
 
   private async updateOne<T>(model: Model<T>, args: QueryArgs) {

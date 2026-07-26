@@ -1,74 +1,42 @@
-/**
- * Authentication-related interfaces and types
- */
+import type { Request } from 'express';
+import { UserRole, UserStatus } from '../../../common/schemas';
 
-export enum UserRole {
-  CUSTOMER = 'CUSTOMER',
-  MODERATOR = 'MODERATOR',
-  ADMIN = 'ADMIN',
-  SUPER_ADMIN = 'SUPER_ADMIN',
+export enum ClientPlatform {
+  Web = 'web',
+  Desktop = 'desktop',
+  Mobile = 'mobile',
 }
 
-/**
- * Access token payload - minimal for stateless auth
- * tokenVersion enables immediate revocation without full DB lookup
- */
-export interface IAccessTokenPayload {
+export interface AuthenticatedUser {
   userId: string;
   role: UserRole;
-  tokenVersion: number; // Incremented on security events (block, password change, etc.)
-  iat?: number;
-  exp?: number;
+  tokenVersion: number;
 }
 
-/**
- * Refresh token payload - minimal data
- * JTI is set via JWT standard claims, not in payload
- */
-export interface IRefreshTokenPayload {
-  userId: string;
-  iat?: number;
-  exp?: number;
+export interface AuthenticatedRequest extends Request {
+  user: AuthenticatedUser;
 }
 
-/**
- * @deprecated Use IAccessTokenPayload or IRefreshTokenPayload
- */
-export interface ITokenPayload {
-  userId: string;
+export interface PublicUser {
+  id: string;
   email: string;
+  username: string;
   role: UserRole;
-  jti?: string;
-  iat?: number;
-  exp?: number;
+  status: UserStatus;
+  verified: boolean;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string | null;
+  provider: string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
-/**
- * Stored refresh token data in Redis
- */
-export interface IStoredRefreshToken {
-  userId: string;
-  jti: string;
-  tokenHash: string; // SHA-256 hash of the actual token
-  ip: string;
-  userAgent: string;
-  device?: string;
-  createdAt: string;
-  rotatedFrom?: string; // JTI of the token this was rotated from
-}
-
-/**
- * Login response structure
- */
-export interface ILoginResponse {
+export interface TokenPair {
   accessToken: string;
   refreshToken: string;
-  user: {
-    id: string;
-    email: string;
-    username: string;
-    role: string;
-    verified: boolean;
-  };
-  expiresIn: number;
+}
+
+export interface AuthResponse extends TokenPair {
+  user: PublicUser;
 }

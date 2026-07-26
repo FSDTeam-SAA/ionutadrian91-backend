@@ -1,1112 +1,566 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { AuthUtilsService } from './services/auth-utils.service';
-import { AUTH_CONFIG } from './config/auth.config';
-import { MongoService } from '../../common/services/mongo.service';
-import { ActivityLogService } from '../../common/services/activity-log.service';
-import { RedisService } from '../../common/services/redis.service';
-import { EmailQueueService } from '../../common/queues/email/email.queue';
-import { CustomLoggerService } from '../../common/services/custom-logger.service';
-import AppError from '../../common/errors/app.error';
-import * as bcrypt from 'bcryptjs';
-import config from '../../common/config/app.config';
 import {
-  ILoginResponse,
-  IStoredRefreshToken,
-  UserRole,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { randomInt, randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
+import * as jwt from 'jsonwebtoken';
+import config from '../../common/config/app.config';
+import { MongoService } from '../../common/services/mongo.service';
+import { RedisService } from '../../common/services/redis.service';
+import { UserRole, UserStatus } from '../../common/schemas';
+import { EmailQueueService } from '../../common/queues/email/email.queue';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { OtpPurpose, ResendOtpDto } from './dto/resend-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import {
+  AuthResponse,
+  AuthenticatedUser,
+  ClientPlatform,
+  PublicUser,
+  TokenPair,
 } from './interfaces/auth.interface';
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+const ACCESS_TOKEN_TTL = '15m';
+const REFRESH_TOKEN_TTL = '7d';
+const REFRESH_TOKEN_CACHE_SECONDS = 7 * 24 * 60 * 60;
+const BCRYPT_ROUNDS = 12;
+const OTP_TTL_MS = 10 * 60 * 1000;
+const VERIFY_EMAIL_OTP_TTL_MS = 24 * 60 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly authUtilsService: AuthUtilsService,
-    private readonly mongoService: MongoService,
-    private readonly activityLogService: ActivityLogService,
-    private readonly redisService: RedisService,
-    private readonly emailQueueService: EmailQueueService,
-    private readonly customLogger: CustomLoggerService,
+    private readonly mongo: MongoService,
+    private readonly redis: RedisService,
+    private readonly emailQueue: EmailQueueService,
   ) {}
 
-  async create(
-    payload: CreateAuthDto,
-    meta: { ip: string; userAgent: string; device?: string },
-  ): Promise<void> {
-    const { email, password, username } = payload;
-    const { ip, userAgent, device } = meta;
+  async register(
+    dto: RegisterDto,
+  ): Promise<{ user: PublicUser; verificationRequired: true }> {
+    await this.assertUniqueIdentity(dto.email, dto.username);
 
-    this.customLogger.log(
-      `Registration attempt for email: ${email}, username: ${username}`,
-      'AuthService',
-    );
-
-    const { LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS } = AUTH_CONFIG.RATE_LIMIT;
-    const { VERIFICATION } = AUTH_CONFIG.TOKEN_EXPIRY;
-
-    // Check rate limiting for email, IP, and user agent
-    await Promise.all([
-      this.authUtilsService.checkRateLimit(
-        `login:email:${email}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
-      this.authUtilsService.checkRateLimit(
-        `login:ip:${ip}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
-    ]);
-
-    // Validate password strength
-    if (!this.authUtilsService.validatePassword(password)) {
-      throw AppError.badRequest('Password does not meet security requirements');
-    }
-
-    // Check if user already exists with email or username
-    const existingUser = await this.mongoService.authUser.findFirst({
-      where: {
-        OR: [{ email }, { username }],
+    const password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const user = await this.mongo.authUser.create({
+      data: {
+        email: dto.email.toLowerCase(),
+        username: dto.username,
+        password,
+        role: UserRole.Field,
+        status: UserStatus.Active,
+        verified: false,
+        provider: 'local',
+        tokenVersion: 0,
       },
     });
 
-    if (existingUser) {
-      if (existingUser.email === email) {
-        this.customLogger.warn(
-          `Registration failed: Email already exists - ${email}`,
-          'AuthService',
-        );
-        throw AppError.conflict('Email already exists!');
-      }
-      if (existingUser.username === username) {
-        this.customLogger.warn(
-          `Registration failed: Username already exists - ${username}`,
-          'AuthService',
-        );
-        throw AppError.conflict('Username already exists!');
-      }
-    }
-
-    // Generate verification code
-    // Generate verification code
-    const verificationCode = this.authUtilsService.generateVerificationCode();
-    const expiresAt = new Date(
-      Date.now() + this.parseExpiryToSeconds(VERIFICATION) * 1000,
-    );
-
-    // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Create user with auth security in a transaction
-    const newUser = await this.mongoService.$transaction(
-      async (tx): Promise<{ id: string; email: string; username: string }> => {
-        // Create auth user
-        const user = await tx.authUser.create({
-          data: {
-            email,
-            username,
-            password: hashedPassword,
-            role: 'USER',
-            verified: false,
-            status: 'ACTIVE',
-            provider: 'local',
-          },
-        });
-
-        // Create auth security record
-        await tx.authSecurity.create({
-          data: {
-            authId: user.id,
-            failedAttempts: 0,
-            mfaEnabled: false,
-            lastPasswordChange: new Date(),
-          },
-        });
-
-        // Create email history record for verification email
-        await tx.emailHistory.create({
-          data: {
-            authId: user.id,
-            emailTo: email,
-            emailType: 'verification',
-            subject: 'Verify your email address',
-            messageId: `verify-${user.id}-${Date.now()}`,
-            emailStatus: 'pending',
-            ipAddress: ip,
-            userAgent: userAgent,
-          },
-        });
-
-        // Log user registration activity
-        await this.activityLogService.logCreate(
-          'authUser',
-          user.id,
-          {
-            email,
-            username,
-            role: 'USER',
-            status: 'ACTIVE',
-            verified: 'false',
-            provider: 'local',
-          },
-          { ip, userAgent, actionedBy: user.id, device },
-          tx,
-        );
-
-        return user;
-      },
-    );
-
-    // Store verification code in Redis with expiry
-    const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
-    const ttlSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
-
-    await this.redisService.set(
-      verificationKey,
-      {
-        code: verificationCode,
-        userId: newUser.id,
-        email: newUser.email,
-        expiresAt: expiresAt.toISOString(),
-      },
-      ttlSeconds,
-    );
-
-    // Queue verification email for async processing
-    try {
-      await this.emailQueueService.sendVerificationEmail(
-        email,
-        username,
-        verificationCode,
-        newUser.id,
-      );
-      this.customLogger.log(
-        `User registered successfully: ${email}, verification email queued`,
-        'AuthService',
-      );
-    } catch (error) {
-      this.customLogger.error(
-        `Failed to queue verification email for ${email}`,
-        error instanceof Error ? error.stack : undefined,
-        'AuthService',
-      );
-      console.error('Failed to queue verification email:', error);
-      // Update email history status to 'failed'
-      await this.mongoService.emailHistory.updateMany({
-        where: {
-          authId: newUser.id,
-          emailType: 'verification',
-          emailStatus: 'pending',
-        },
-        data: {
-          emailStatus: 'failed',
-          errorMessage:
-            error instanceof Error ? error.message : 'Failed to queue email',
-        },
-      });
-      // Don't throw error, user is created, just email failed
-    }
-  }
-
-  /**
-   * Verify user email with verification code
-   */
-  async verifyEmail(
-    email: string,
-    code: string,
-    meta: { ip: string; userAgent: string },
-  ): Promise<{ message: string }> {
-    const { ip, userAgent } = meta;
-
-    this.customLogger.log(
-      `Email verification attempt for: ${email}`,
-      'AuthService',
-    );
-    const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
-
-    // Get verification data from Redis
-    const verificationData = await this.redisService.get<{
-      code: string;
-      userId: string;
-      email: string;
-      expiresAt: string;
-    }>(verificationKey);
-
-    if (!verificationData) {
-      this.customLogger.warn(
-        `Verification failed: Code expired or invalid for ${email}`,
-        'AuthService',
-      );
-      throw AppError.badRequest(
-        'Verification code expired or invalid. Please request a new code.',
-      );
-    }
-
-    // Validate code
-    if (verificationData.code !== code) {
-      this.customLogger.warn(
-        `Verification failed: Invalid code for ${email}`,
-        'AuthService',
-      );
-      throw AppError.badRequest('Invalid verification code');
-    }
-
-    // Find user
-    const user = await this.mongoService.authUser.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      throw AppError.notFound('User not found');
-    }
-
-    if (user.verified) {
-      throw AppError.badRequest('Email already verified');
-    }
-
-    // Update user as verified
-    await this.mongoService.$transaction(async (tx) => {
-      await tx.authUser.update({
-        where: { id: user.id },
-        data: { verified: true },
-      });
-
-      // Log verification activity
-      await this.activityLogService.logCustomEvent(
-        'authUser',
-        user.id,
-        'profile_update',
-        { ip, userAgent, actionedBy: user.id },
-        [
-          {
-            fieldName: 'verified',
-            oldValue: 'false',
-            newValue: 'true',
-          },
-        ],
-        tx,
-      );
-    });
-
-    // Delete verification code from Redis
-    await this.redisService.del(verificationKey);
-
-    // Queue welcome email for async processing
-    try {
-      await this.emailQueueService.sendWelcomeEmail(
-        email,
-        user.username,
-        user.id,
-      );
-      this.customLogger.log(
-        `Email verified successfully for: ${email}, welcome email queued`,
-        'AuthService',
-      );
-    } catch (error) {
-      this.customLogger.error(
-        `Verification successful but failed to queue welcome email for ${email}`,
-        error instanceof Error ? error.stack : undefined,
-        'AuthService',
-      );
-      console.error('Failed to queue welcome email:', error);
-      // Don't throw, verification is successful
-    }
-
-    return { message: 'Email verified successfully' };
-  }
-
-  /**
-   * Resend verification email
-   */
-  async resendVerificationEmail(
-    email: string,
-    meta: { ip: string; userAgent: string },
-  ): Promise<{ message: string }> {
-    const { ip, userAgent } = meta;
-    const { VERIFICATION } = AUTH_CONFIG.TOKEN_EXPIRY;
-
-    this.customLogger.log(
-      `Resend verification email requested for: ${email}`,
-      'AuthService',
-    );
-
-    // Check rate limiting
-    await this.authUtilsService.checkRateLimit(
-      `resend:verification:${email}`,
-      3, // Max 3 attempts
-      15 * 60 * 1000, // 15 minutes
-    );
-
-    // Find user
-    const user = await this.mongoService.authUser.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      throw AppError.notFound('User not found');
-    }
-
-    if (user.verified) {
-      throw AppError.badRequest('Email already verified');
-    }
-
-    // Generate new verification code
-    const verificationCode = this.authUtilsService.generateVerificationCode();
-    const expiresAt = new Date(
-      Date.now() + this.parseExpiryToSeconds(VERIFICATION) * 1000,
-    );
-
-    // Store new verification code in Redis
-    const verificationKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.VERIFICATION_TOKEN}:${email}`;
-    const ttlSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
-
-    await this.redisService.set(
-      verificationKey,
-      {
-        code: verificationCode,
-        userId: user.id,
-        email: user.email,
-        expiresAt: expiresAt.toISOString(),
-      },
-      ttlSeconds,
-    );
-
-    // Create new email history record
-    await this.mongoService.emailHistory.create({
+    const otp = this.generateOtp();
+    await this.mongo.authSecurity.create({
       data: {
         authId: user.id,
-        emailTo: email,
-        emailType: 'verification',
-        subject: 'Verify your email address',
-        messageId: `verify-resend-${user.id}-${Date.now()}`,
-        emailStatus: 'pending',
-        ipAddress: ip,
-        userAgent: userAgent,
+        failedAttempts: 0,
+        mfaEnabled: false,
+        lastPasswordChange: new Date(),
+        emailVerificationOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
+        emailVerificationOtpExpiresAt: new Date(
+          Date.now() + VERIFY_EMAIL_OTP_TTL_MS,
+        ),
+        emailVerificationOtpLastSentAt: new Date(),
+      },
+    });
+    await this.mongo.userProfile.create({
+      data: {
+        authId: user.id,
+        firstName: dto.firstName || '',
+        lastName: dto.lastName || '',
       },
     });
 
-    // Queue verification email for async processing
-    try {
-      await this.emailQueueService.sendVerificationEmail(
-        email,
-        user.username,
-        verificationCode,
-        user.id,
-      );
-    } catch (error) {
-      console.error('Failed to queue verification email:', error);
-      // Update email history status to 'failed'
-      await this.mongoService.emailHistory.updateMany({
-        where: {
-          authId: user.id,
-          emailType: 'verification',
-          emailStatus: 'pending',
-        },
-        data: {
-          emailStatus: 'failed',
-          errorMessage:
-            error instanceof Error ? error.message : 'Failed to queue email',
-        },
-      });
-      throw AppError.badRequest('Failed to send verification email');
-    }
-
-    return { message: 'Verification email sent successfully' };
-  }
-
-  async login(
-    payload: { email: string; password: string },
-    meta: { ip: string; userAgent: string; device?: string },
-  ): Promise<ILoginResponse> {
-    const { email, password } = payload;
-    const { ip, userAgent, device } = meta;
-
-    const { LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS } = AUTH_CONFIG.RATE_LIMIT;
-    const { MAX_FAILED_ATTEMPTS, LOCKOUT_DURATION_MS } =
-      AUTH_CONFIG.ACCOUNT_LOCKOUT;
-
-    // Rate limiting
-    await Promise.all([
-      this.authUtilsService.checkRateLimit(
-        `login:email:${email}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
-      this.authUtilsService.checkRateLimit(
-        `login:ip:${ip}`,
-        LOGIN_MAX_ATTEMPTS,
-        LOGIN_WINDOW_MS,
-      ),
-    ]);
-
-    // Fetch user with security data in single optimized query
-    const user = await this.mongoService.authUser.findUnique({
-      where: { email },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        password: true,
-        role: true,
-        verified: true,
-        status: true,
-        provider: true,
-        tokenVersion: true,
-        authSecurity: {
-          select: {
-            id: true,
-            failedAttempts: true,
-            lastFailedAt: true,
-            lockExpiresAt: true,
-          },
-        },
-      },
-    });
-
-    // Generic error message to prevent user enumeration
-    const invalidCredentialsError = AppError.unauthorized(
-      'Invalid email or password',
+    await this.recordEmail(user.id, user.email, 'verification');
+    await this.emailQueue.sendVerificationEmail(
+      user.email,
+      user.username,
+      otp,
+      user.id,
     );
-
-    // CRITICAL: Timing attack prevention
-    // Always run bcrypt.compare even if user doesn't exist
-    // This ensures consistent response time regardless of user existence
-    const fakePasswordHash =
-      '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G4.4.G4.G4.G4.G';
-
-    if (!user) {
-      // Run fake bcrypt to prevent timing attacks (~200ms)
-      await bcrypt.compare(password, fakePasswordHash);
-
-      // Log failed attempt (fire-and-forget)
-      void this.logLoginAttempt({
-        authId: null,
-        ip,
-        userAgent,
-        device,
-        success: false,
-        failureReason: 'user_not_found',
-      });
-
-      throw invalidCredentialsError;
-    }
-
-    // Check OAuth provider
-    if (user.provider !== 'local') {
-      throw AppError.badRequest(
-        `Please login using ${user.provider} authentication`,
-      );
-    }
-
-    // Check account status
-    if (user.status === 'BLOCKED' || user.status === 'SUSPENDED') {
-      void this.logLoginAttempt({
-        authId: user.id,
-        ip,
-        userAgent,
-        device,
-        success: false,
-        failureReason: `account_${user.status.toLowerCase()}`,
-      });
-      throw AppError.forbidden(
-        `Your account has been ${user.status.toLowerCase()}. Please contact support.`,
-      );
-    }
-
-    if (user.status === 'DELETED' || user.status === 'INACTIVE') {
-      // Run bcrypt to maintain consistent timing
-      await bcrypt.compare(password, user.password);
-      throw invalidCredentialsError;
-    }
-
-    // Check account lockout
-    const security = user.authSecurity;
-    if (security?.lockExpiresAt && new Date() < security.lockExpiresAt) {
-      const remainingTime = Math.ceil(
-        (security.lockExpiresAt.getTime() - Date.now()) / 1000 / 60,
-      );
-      void this.logLoginAttempt({
-        authId: user.id,
-        ip,
-        userAgent,
-        device,
-        success: false,
-        failureReason: 'account_locked',
-        attemptNumber: security.failedAttempts + 1,
-      });
-      throw AppError.forbidden(
-        `Account is temporarily locked. Please try again in ${remainingTime} minutes.`,
-      );
-    }
-
-    // Verify password (bcrypt uses constant-time comparison internally)
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      await this.handleFailedLoginAttempt(
-        user.id,
-        security?.failedAttempts || 0,
-        MAX_FAILED_ATTEMPTS,
-        LOCKOUT_DURATION_MS,
-        { ip, userAgent, device },
-      );
-      throw invalidCredentialsError;
-    }
-
-    // Check email verification
-    if (!user.verified) {
-      void this.logLoginAttempt({
-        authId: user.id,
-        ip,
-        userAgent,
-        device,
-        success: false,
-        failureReason: 'email_not_verified',
-      });
-      throw AppError.forbidden(
-        'Please verify your email address before logging in',
-      );
-    }
-
-    // Distributed lock to prevent concurrent login race conditions
-    const lockKey = `${config.redis_cache_key_prefix}:lock:login:${user.id}`;
-    const lockAcquired = await this.redisService.setNX(lockKey, '1', 5); // 5 second TTL
-
-    if (!lockAcquired) {
-      throw AppError.conflict(
-        'Another login is in progress. Please try again in a moment.',
-      );
-    }
-
-    try {
-      // Generate JTI FIRST (cryptographically secure)
-      const jti: string = this.authUtilsService.generateSecureId();
-
-      // Create access token (stateless, minimal payload - no email)
-      const accessToken: string = this.authUtilsService.createAccessToken({
-        userId: user.id,
-        role: user.role as unknown as UserRole,
-        tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
-      });
-
-      // Create refresh token with JTI embedded
-      const refreshToken: string = this.authUtilsService.createRefreshToken(
-        { userId: user.id },
-        jti,
-      );
-
-      // Hash the refresh token for secure storage (never store raw tokens)
-      const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
-
-      // Calculate TTL
-      const refreshTokenTTL = this.parseExpiryToSeconds(
-        AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
-      );
-
-      // Redis key with proper naming convention
-      const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${user.id}:${jti}`;
-
-      // Stored token data (with hash, not raw token)
-      const storedTokenData: IStoredRefreshToken = {
-        userId: user.id,
-        jti,
-        tokenHash, // Store hash, not raw token
-        ip,
-        userAgent,
-        device,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Execute critical Redis operations with detailed error handling and rollback
-      try {
-        // CRITICAL: Store refresh token hash in Redis
-        await this.redisService.set(
-          refreshTokenKey,
-          storedTokenData,
-          refreshTokenTTL,
-        );
-      } catch (error) {
-        console.error('Failed to store refresh token in Redis:', {
-          userId: user.id,
-          jti,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw AppError.serviceUnavailable(
-          'Authentication service temporarily unavailable. Please try again.',
-        );
-      }
-
-      try {
-        // CRITICAL: Track session in user's session list
-        await this.addUserSession(user.id, jti, refreshTokenTTL);
-      } catch (error) {
-        console.error('Failed to add user session to Redis:', {
-          userId: user.id,
-          jti,
-          error: error instanceof Error ? error.message : String(error),
-        });
-
-        // Rollback: Remove the refresh token we just stored
-        await this.redisService.del(refreshTokenKey).catch((rollbackError) => {
-          console.error('CRITICAL: Failed to rollback refresh token:', {
-            userId: user.id,
-            jti,
-            error:
-              rollbackError instanceof Error
-                ? rollbackError.message
-                : String(rollbackError),
-          });
-        });
-
-        throw AppError.serviceUnavailable(
-          'Authentication service temporarily unavailable. Please try again.',
-        );
-      }
-
-      // NON-CRITICAL: Enforce max devices (log but don't fail login)
-      try {
-        await this.enforceMaxDevices(
-          user.id,
-          AUTH_CONFIG.SESSION.MAX_DEVICES_PER_USER,
-        );
-      } catch (error) {
-        console.error('Failed to enforce max devices (non-critical):', {
-          userId: user.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        // Continue - login still succeeds
-      }
-
-      // NON-CRITICAL: DB operations (fire-and-forget with detailed logging)
-      void Promise.allSettled([
-        security
-          ? this.mongoService.authSecurity.update({
-              where: { id: security.id },
-              data: {
-                failedAttempts: 0,
-                lastFailedAt: null,
-                lockExpiresAt: null,
-              },
-            })
-          : Promise.resolve(),
-        this.logLoginAttempt({
-          authId: user.id,
-          ip,
-          userAgent,
-          device,
-          success: true,
-        }),
-      ]).then((results) => {
-        results.forEach((result) => {
-          if (result.status === 'rejected') {
-            console.error('Non-critical login post-process failed:', result);
-          }
-        });
-      });
-
-      return {
-        accessToken,
-        refreshToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          role: user.role,
-          verified: user.verified,
-        },
-        expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
-      };
-    } finally {
-      // Always release the lock
-      await this.redisService.del(lockKey);
-    }
-  }
-
-  /**
-   * Refresh access token using refresh token
-   * Implements token rotation for security
-   */
-  async refreshToken(
-    refreshToken: string,
-    meta: { ip: string; userAgent: string; device?: string },
-  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-    const { ip, userAgent, device } = meta;
-
-    // Verify and decode refresh token
-    let decoded: { userId: string; jti: string };
-    try {
-      const payload = this.authUtilsService.verifyRefreshToken(refreshToken);
-
-      // JTI comes from JWT standard claims (set via jwtid option)
-      if (!payload.jti) {
-        throw new Error('Missing JTI in token');
-      }
-
-      decoded = {
-        userId: payload.userId,
-        jti: payload.jti,
-      };
-    } catch {
-      throw AppError.unauthorized('Invalid or expired refresh token');
-    }
-
-    const { userId, jti } = decoded;
-    if (!userId || !jti) {
-      throw AppError.unauthorized('Invalid refresh token payload');
-    }
-
-    // Get stored token data from Redis
-    const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
-    const storedData =
-      await this.redisService.get<IStoredRefreshToken>(refreshTokenKey);
-
-    if (!storedData) {
-      // Token not found - possibly already rotated or revoked
-      // This could indicate a replay attack - revoke all user tokens
-      await this.revokeAllUserTokens(userId);
-      throw AppError.unauthorized(
-        'Refresh token has been revoked. Please login again.',
-      );
-    }
-
-    // Validate token hash (ensures token hasn't been tampered with)
-    const tokenHash: string = this.authUtilsService.hashToken(refreshToken);
-    if (storedData.tokenHash !== tokenHash) {
-      // Token mismatch - potential attack, revoke all tokens
-      await this.revokeAllUserTokens(userId);
-      throw AppError.unauthorized('Invalid refresh token');
-    }
-
-    // Fetch user to get current role (may have changed)
-    const user = await this.mongoService.authUser.findUnique({
-      where: { id: userId },
-      select: { id: true, role: true, status: true, tokenVersion: true },
-    });
-
-    if (!user || user.status !== 'ACTIVE') {
-      await this.revokeAllUserTokens(userId);
-      throw AppError.unauthorized('User account is not active');
-    }
-
-    // TOKEN ROTATION: Generate new JTI for new refresh token
-    const newJti: string = this.authUtilsService.generateSecureId();
-
-    // Create new tokens
-    const newAccessToken: string = this.authUtilsService.createAccessToken({
-      userId: user.id,
-      role: user.role as unknown as UserRole,
-      tokenVersion: user.tokenVersion, // Include tokenVersion for hybrid JWT validation
-    });
-
-    const newRefreshToken: string = this.authUtilsService.createRefreshToken(
-      { userId: user.id },
-      newJti,
-    );
-
-    const newTokenHash: string =
-      this.authUtilsService.hashToken(newRefreshToken);
-    const refreshTokenTTL = this.parseExpiryToSeconds(
-      AUTH_CONFIG.TOKEN_EXPIRY.REFRESH,
-    );
-
-    const newRefreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${newJti}`;
-
-    const newStoredData: IStoredRefreshToken = {
-      userId,
-      jti: newJti,
-      tokenHash: newTokenHash,
-      ip,
-      userAgent,
-      device,
-      createdAt: new Date().toISOString(),
-      rotatedFrom: jti, // Track rotation chain
-    };
-
-    // Atomic rotation: delete old token and create new one
-    await Promise.all([
-      // Delete old refresh token
-      this.redisService.del(refreshTokenKey),
-      // Remove old JTI from session list
-      this.removeUserSession(userId, jti),
-      // Store new refresh token
-      this.redisService.set(newRefreshTokenKey, newStoredData, refreshTokenTTL),
-      // Add new JTI to session list
-      this.addUserSession(userId, newJti, refreshTokenTTL),
-    ]);
 
     return {
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-      expiresIn: this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.ACCESS),
+      user: this.toPublicUser(await this.findUserWithProfile(user.id)),
+      verificationRequired: true,
     };
   }
 
-  /**
-   * Logout user by revoking their refresh token
-   */
-  async logout(
-    refreshToken: string,
-    userId: string,
-  ): Promise<{ message: string }> {
-    // Verify refresh token
-    let decoded;
-    try {
-      decoded = this.authUtilsService.verifyRefreshToken(refreshToken);
-    } catch {
-      // Token already invalid, just return success
-      return { message: 'Logged out successfully' };
+  async verifyEmail(dto: VerifyEmailDto): Promise<{ verified: true }> {
+    const user = await this.findByEmail(dto.email);
+    if (!user) {
+      throw new BadRequestException('Invalid or expired OTP');
     }
 
-    if (decoded.userId !== userId) {
-      throw AppError.unauthorized('Invalid token');
+    if (user.verified) {
+      return { verified: true };
     }
 
-    const { jti } = decoded;
-    if (jti) {
-      const refreshTokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
-
-      await Promise.all([
-        this.redisService.del(refreshTokenKey),
-        this.removeUserSession(userId, jti),
-      ]);
-    }
-
-    return { message: 'Logged out successfully' };
-  }
-
-  /**
-   * Logout from all devices by revoking all refresh tokens
-   */
-  async logoutAllDevices(userId: string): Promise<{ message: string }> {
-    await this.revokeAllUserTokens(userId);
-    // Increment tokenVersion to immediately invalidate all access tokens
-    await this.incrementTokenVersion(userId);
-    return { message: 'Logged out from all devices successfully' };
-  }
-
-  /**
-   * Add a session (JTI) to user's session list
-   */
-  private async addUserSession(
-    userId: string,
-    jti: string,
-    ttl: number,
-  ): Promise<void> {
-    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
-
-    // Get current sessions
-    const sessions =
-      (await this.redisService.get<string[]>(userSessionsKey)) || [];
-
-    // Add new session
-    sessions.push(jti);
-
-    // Store updated sessions
-    await this.redisService.set(userSessionsKey, sessions, ttl);
-  }
-
-  /**
-   * Remove a session from user's session list
-   */
-  private async removeUserSession(userId: string, jti: string): Promise<void> {
-    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
-
-    const sessions =
-      (await this.redisService.get<string[]>(userSessionsKey)) || [];
-    const updatedSessions = sessions.filter((s) => s !== jti);
-
-    if (updatedSessions.length > 0) {
-      const ttl = this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.REFRESH);
-      await this.redisService.set(userSessionsKey, updatedSessions, ttl);
-    } else {
-      await this.redisService.del(userSessionsKey);
-    }
-  }
-
-  /**
-   * Enforce maximum devices per user
-   * Removes oldest sessions when limit exceeded
-   */
-  private async enforceMaxDevices(
-    userId: string,
-    maxDevices: number,
-  ): Promise<void> {
-    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
-
-    const sessions =
-      (await this.redisService.get<string[]>(userSessionsKey)) || [];
-
-    if (sessions.length <= maxDevices) {
-      return;
-    }
-
-    // Remove oldest sessions (first in list)
-    const sessionsToRemove = sessions.slice(
-      0,
-      sessions.length - maxDevices + 1,
+    const security = user.authSecurity;
+    await this.assertValidOtp(
+      dto.otp,
+      security?.emailVerificationOtpHash,
+      security?.emailVerificationOtpExpiresAt,
     );
 
-    await Promise.all(
-      sessionsToRemove.map(async (jti) => {
-        const tokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
-        await this.redisService.del(tokenKey);
-      }),
+    await this.mongo.authUser.update({
+      where: { id: user.id },
+      data: { verified: true },
+    });
+    await this.mongo.authSecurity.update({
+      where: { authId: user.id },
+      data: {
+        emailVerificationOtpHash: null,
+        emailVerificationOtpExpiresAt: null,
+      },
+    });
+    await this.emailQueue.sendWelcomeEmail(user.email, user.username, user.id);
+
+    return { verified: true };
+  }
+
+  async login(dto: LoginDto): Promise<AuthResponse> {
+    const user = await this.mongo.authUser.findFirst({
+      where: {
+        OR: [
+          { email: dto.identifier.toLowerCase() },
+          { username: dto.identifier },
+        ],
+      },
+    });
+
+    if (!user || !user.password) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (user.status !== UserStatus.Active) {
+      throw new ForbiddenException('User account is not active');
+    }
+
+    if (!user.verified) {
+      throw new ForbiddenException('Email verification is required');
+    }
+
+    const passwordMatches = await bcrypt.compare(dto.password, user.password);
+    if (!passwordMatches) {
+      await this.recordFailedLogin(user.id);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    this.assertRoleCanUsePlatform(
+      user.role as UserRole,
+      dto.clientPlatform || ClientPlatform.Web,
     );
 
-    // Keep only the most recent sessions
-    const updatedSessions = sessions.slice(sessions.length - maxDevices + 1);
-    const ttl = this.parseExpiryToSeconds(AUTH_CONFIG.TOKEN_EXPIRY.REFRESH);
-    await this.redisService.set(userSessionsKey, updatedSessions, ttl);
+    await this.resetFailedLogins(user.id);
+    return this.buildAuthResponse(await this.findUserWithProfile(user.id));
   }
 
-  /**
-   * Revoke all refresh tokens for a user (security measure)
-   */
-  private async revokeAllUserTokens(userId: string): Promise<void> {
-    const userSessionsKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.USER_SESSIONS}:${userId}`;
-
-    const sessions =
-      (await this.redisService.get<string[]>(userSessionsKey)) || [];
-
-    // Delete all refresh tokens
-    await Promise.all([
-      ...sessions.map((jti) => {
-        const tokenKey = `${config.redis_cache_key_prefix}:${AUTH_CONFIG.CACHE_PREFIXES.REFRESH_TOKEN}:${userId}:${jti}`;
-        return this.redisService.del(tokenKey);
-      }),
-      this.redisService.del(userSessionsKey),
-    ]);
-  }
-
-  /**
-   * Handle failed login attempt with account lockout
-   */
-  private async handleFailedLoginAttempt(
-    userId: string,
-    currentFailedAttempts: number,
-    maxAttempts: number,
-    lockoutDuration: number,
-    meta: { ip: string; userAgent: string; device?: string },
-  ): Promise<void> {
-    const newFailedAttempts = currentFailedAttempts + 1;
-    const shouldLock = newFailedAttempts >= maxAttempts;
-
-    await Promise.all([
-      this.mongoService.authSecurity.update({
-        where: { authId: userId },
-        data: {
-          failedAttempts: newFailedAttempts,
-          lastFailedAt: new Date(),
-          ...(shouldLock && {
-            lockExpiresAt: new Date(Date.now() + lockoutDuration),
-          }),
-        },
-      }),
-      this.logLoginAttempt({
-        authId: userId,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-        device: meta.device,
-        success: false,
-        failureReason: shouldLock ? 'account_locked' : 'invalid_password',
-        attemptNumber: newFailedAttempts,
-      }),
-    ]);
-
-    // On account lock, increment tokenVersion to immediately invalidate all access tokens
-    if (shouldLock) {
-      await this.incrementTokenVersion(userId);
-    }
-  }
-
-  /**
-   * Log login attempt (fire-and-forget for non-blocking writes)
-   */
-  private logLoginAttempt(data: {
-    authId: string | null;
-    ip: string;
-    userAgent: string;
-    device?: string;
-    success: boolean;
-    failureReason?: string;
-    attemptNumber?: number;
-    isSuspicious?: boolean;
-  }): Promise<void> {
-    if (!data.authId) {
-      return Promise.resolve();
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<{ otpSentIfAccountExists: true }> {
+    const user = await this.findByEmail(dto.email);
+    if (
+      user &&
+      user.status === UserStatus.Active &&
+      user.provider === 'local' &&
+      user.verified
+    ) {
+      try {
+        await this.issuePasswordResetOtp(user);
+      } catch (error) {
+        if (!(error instanceof BadRequestException)) {
+          throw error;
+        }
+      }
     }
 
-    return this.mongoService.loginHistory
-      .create({
+    return { otpSentIfAccountExists: true };
+  }
+
+  async resendOtp(dto: ResendOtpDto): Promise<{ otpSent: true }> {
+    const user = await this.findByEmail(dto.email);
+    if (!user) {
+      throw new BadRequestException('Unable to send OTP');
+    }
+
+    if (dto.purpose === OtpPurpose.VerifyEmail) {
+      if (user.verified) {
+        throw new BadRequestException('Email is already verified');
+      }
+
+      await this.assertCanResend(user.authSecurity?.emailVerificationOtpLastSentAt);
+      const otp = this.generateOtp();
+      await this.mongo.authSecurity.update({
+        where: { authId: user.id },
         data: {
-          authId: data.authId,
-          ipAddress: data.ip,
-          userAgent: data.userAgent,
-          device_id: data.device,
-          action: 'login',
-          success: data.success,
-          failureReason: data.failureReason,
-          attemptNumber: data.attemptNumber || 1,
-          isSuspicious: data.isSuspicious || false,
+          emailVerificationOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
+          emailVerificationOtpExpiresAt: new Date(
+            Date.now() + VERIFY_EMAIL_OTP_TTL_MS,
+          ),
+          emailVerificationOtpLastSentAt: new Date(),
         },
-      })
-      .then(() => undefined)
-      .catch((error) => {
-        console.error('Failed to log login attempt:', error);
       });
-  }
-
-  /**
-   * Parse token expiry string to seconds
-   */
-  private parseExpiryToSeconds(expiry: string): number {
-    const match = expiry.match(/^(\d+)([smhd])?$/);
-    if (!match) {
-      return 3600;
+      await this.recordEmail(user.id, user.email, 'verification');
+      await this.emailQueue.sendVerificationEmail(
+        user.email,
+        user.username,
+        otp,
+        user.id,
+      );
+      return { otpSent: true };
     }
 
-    const value = parseInt(match[1], 10);
-    const unit = match[2] || 's';
+    if (!user.verified || user.status !== UserStatus.Active) {
+      throw new BadRequestException('Unable to send OTP');
+    }
 
-    switch (unit) {
-      case 's':
-        return value;
-      case 'm':
-        return value * 60;
-      case 'h':
-        return value * 60 * 60;
-      case 'd':
-        return value * 60 * 60 * 24;
-      default:
-        return value;
+    await this.assertCanResend(user.authSecurity?.passwordResetOtpLastSentAt);
+    await this.issuePasswordResetOtp(user);
+    return { otpSent: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ changed: true }> {
+    const user = await this.findByEmail(dto.email);
+    if (!user || user.status !== UserStatus.Active || user.provider !== 'local') {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.assertValidOtp(
+      dto.otp,
+      user.authSecurity?.passwordResetOtpHash,
+      user.authSecurity?.passwordResetOtpExpiresAt,
+    );
+
+    const passwordMatches = await bcrypt.compare(dto.newPassword, user.password);
+    if (passwordMatches) {
+      throw new BadRequestException('New password must be different');
+    }
+
+    const password = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    const updated = await this.mongo.authUser.update({
+      where: { id: user.id },
+      data: {
+        password,
+        tokenVersion: { increment: 1 },
+      },
+    });
+    await this.mongo.authSecurity.update({
+      where: { authId: user.id },
+      data: {
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+        lastPasswordChange: new Date(),
+      },
+    });
+    await this.cacheTokenVersion(user.id, updated.tokenVersion as number);
+    await this.redis.deleteByPattern(
+      `${config.redis_cache_key_prefix}:refresh:${user.id}:*`,
+    );
+
+    return { changed: true };
+  }
+
+  async refresh(refreshToken: string): Promise<TokenPair> {
+    try {
+      const payload = jwt.verify(refreshToken, this.refreshSecret) as AuthenticatedUser;
+      const cacheKey = this.refreshTokenKey(payload.userId, refreshToken);
+      const cached = await this.redis.get<boolean>(cacheKey);
+      if (!cached) {
+        throw new UnauthorizedException('Refresh token is invalid');
+      }
+
+      const user = await this.mongo.authUser.findUnique({
+        where: { id: payload.userId },
+        select: { id: true, role: true, status: true, tokenVersion: true },
+      });
+
+      if (!user || user.status !== UserStatus.Active) {
+        throw new UnauthorizedException('User account is not active');
+      }
+
+      if (user.tokenVersion !== payload.tokenVersion) {
+        throw new UnauthorizedException('Refresh token has been revoked');
+      }
+
+      return this.issueTokens({
+        userId: user.id,
+        role: user.role as UserRole,
+        tokenVersion: user.tokenVersion as number,
+      });
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Refresh token is invalid');
     }
   }
 
-  /**
-   * Increment token version for a user to immediately invalidate all access tokens.
-   * Called on security-critical events: password change, role change, admin block, force logout.
-   * Clears Redis cache to ensure AuthGuard will fetch new version from DB.
-   *
-   * @param userId - The user whose token version to increment
-   */
-  async incrementTokenVersion(userId: string): Promise<void> {
-    // Increment in database
-    await this.mongoService.authUser.update({
+  async logout(userId: string, refreshToken?: string): Promise<{ loggedOut: true }> {
+    if (refreshToken) {
+      await this.redis.del(this.refreshTokenKey(userId, refreshToken));
+    }
+    return { loggedOut: true };
+  }
+
+  async logoutAll(userId: string): Promise<{ loggedOut: true }> {
+    const user = await this.mongo.authUser.update({
       where: { id: userId },
       data: { tokenVersion: { increment: 1 } },
     });
+    await this.cacheTokenVersion(userId, user.tokenVersion as number);
+    await this.redis.deleteByPattern(`${config.redis_cache_key_prefix}:refresh:${userId}:*`);
+    return { loggedOut: true };
+  }
 
-    // Invalidate Redis cache so next guard check fetches new version
-    const cacheKey = `${config.redis_cache_key_prefix}:token_version:${userId}`;
-    await this.redisService.del(cacheKey);
+  async changePassword(
+    currentUser: AuthenticatedUser,
+    dto: ChangePasswordDto,
+  ): Promise<{ changed: true }> {
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must be different');
+    }
 
-    this.customLogger.log(`Token version incremented for user ${userId}, {
-      context: 'AuthService.incrementTokenVersion',
-      userId,
-    }`);
+    const user = await this.mongo.authUser.findUnique({
+      where: { id: currentUser.userId },
+    });
+
+    if (!user || !user.password) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const passwordMatches = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const password = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    const updated = await this.mongo.authUser.update({
+      where: { id: currentUser.userId },
+      data: {
+        password,
+        tokenVersion: { increment: 1 },
+      },
+    });
+    await this.mongo.authSecurity.update({
+      where: { authId: currentUser.userId },
+      data: { lastPasswordChange: new Date() },
+    });
+    await this.cacheTokenVersion(currentUser.userId, updated.tokenVersion as number);
+    await this.redis.deleteByPattern(
+      `${config.redis_cache_key_prefix}:refresh:${currentUser.userId}:*`,
+    );
+
+    return { changed: true };
+  }
+
+  async getMe(userId: string): Promise<PublicUser> {
+    return this.toPublicUser(await this.findUserWithProfile(userId));
+  }
+
+  async buildAuthResponse(user: any): Promise<AuthResponse> {
+    const publicUser = this.toPublicUser(user);
+    const tokens = await this.issueTokens({
+      userId: publicUser.id,
+      role: publicUser.role,
+      tokenVersion: Number(user.tokenVersion || 0),
+    });
+
+    return {
+      ...tokens,
+      user: publicUser,
+    };
+  }
+
+  toPublicUser(user: any): PublicUser {
+    const profile = user.profile || {};
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      status: user.status,
+      verified: Boolean(user.verified),
+      firstName: profile.firstName || '',
+      lastName: profile.lastName || '',
+      avatarUrl: profile.avatarUrl || null,
+      provider: user.provider,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  assertRoleCanUsePlatform(role: UserRole, platform: ClientPlatform) {
+    if (role === UserRole.Field && platform !== ClientPlatform.Mobile) {
+      throw new ForbiddenException('Field users can access mobile only');
+    }
+  }
+
+  private async assertUniqueIdentity(email: string, username: string) {
+    const existing = await this.mongo.authUser.findFirst({
+      where: {
+        OR: [{ email: email.toLowerCase() }, { username }],
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new ConflictException('Email or username is already in use');
+    }
+  }
+
+  private async findByEmail(email: string) {
+    return this.mongo.authUser.findFirst({
+      where: { email: email.toLowerCase() },
+    });
+  }
+
+  private async findUserWithProfile(userId: string) {
+    const user = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const profile = await this.mongo.userProfile.findFirst({
+      where: { authId: userId },
+    });
+
+    return {
+      ...user,
+      profile: profile || {},
+    };
+  }
+
+  private async issueTokens(payload: AuthenticatedUser): Promise<TokenPair> {
+    const accessToken = jwt.sign(payload, config.jwt_access_secret, {
+      expiresIn: ACCESS_TOKEN_TTL,
+    });
+    const refreshToken = jwt.sign(payload, this.refreshSecret, {
+      expiresIn: REFRESH_TOKEN_TTL,
+    });
+
+    await this.redis.set(
+      this.refreshTokenKey(payload.userId, refreshToken),
+      true,
+      REFRESH_TOKEN_CACHE_SECONDS,
+    );
+    await this.cacheTokenVersion(payload.userId, payload.tokenVersion);
+
+    return { accessToken, refreshToken };
+  }
+
+  private async issuePasswordResetOtp(user: any) {
+    await this.assertCanResend(user.authSecurity?.passwordResetOtpLastSentAt);
+    const otp = this.generateOtp();
+    await this.mongo.authSecurity.update({
+      where: { authId: user.id },
+      data: {
+        passwordResetOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
+        passwordResetOtpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
+        passwordResetOtpLastSentAt: new Date(),
+      },
+    });
+    await this.recordEmail(user.id, user.email, 'password_reset');
+    await this.emailQueue.sendPasswordResetEmail(
+      user.email,
+      user.username,
+      otp,
+      user.id,
+    );
+  }
+
+  private async assertValidOtp(
+    otp: string,
+    otpHash?: string | null,
+    expiresAt?: Date | string | null,
+  ) {
+    if (!otpHash || !expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    const matches = await bcrypt.compare(otp, otpHash);
+    if (!matches) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+  }
+
+  private async assertCanResend(lastSentAt?: Date | string | null) {
+    if (!lastSentAt) {
+      return;
+    }
+
+    const elapsed = Date.now() - new Date(lastSentAt).getTime();
+    if (elapsed < OTP_RESEND_COOLDOWN_MS) {
+      throw new BadRequestException('Please wait before requesting another OTP');
+    }
+  }
+
+  private async recordEmail(authId: string, email: string, emailType: string) {
+    await this.mongo.emailHistory.create({
+      data: {
+        authId,
+        emailTo: email,
+        emailType,
+        subject:
+          emailType === 'password_reset'
+            ? 'Reset your password'
+            : 'Verify your email address',
+        messageId: randomUUID(),
+        emailStatus: 'pending',
+      },
+    });
+  }
+
+  private generateOtp() {
+    return randomInt(100000, 1000000).toString();
+  }
+
+  private async recordFailedLogin(userId: string) {
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        failedAttempts: { increment: 1 },
+        lastFailedAt: new Date(),
+      },
+    });
+  }
+
+  private async resetFailedLogins(userId: string) {
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        failedAttempts: 0,
+        lockExpiresAt: null,
+      },
+    });
+  }
+
+  private async cacheTokenVersion(userId: string, tokenVersion: number) {
+    await this.redis.set(
+      `${config.redis_cache_key_prefix}:token_version:${userId}`,
+      tokenVersion,
+      3600,
+    );
+  }
+
+  private refreshTokenKey(userId: string, refreshToken: string) {
+    return `${config.redis_cache_key_prefix}:refresh:${userId}:${refreshToken}`;
+  }
+
+  private get refreshSecret() {
+    return config.jwt_refresh_secret || config.jwt_access_secret;
   }
 }
