@@ -264,6 +264,102 @@ describe('AuthService', () => {
     expect(redis.deleteByPattern).toHaveBeenCalledWith('app:refresh:user-1:*');
   });
 
+  it('verifies password reset OTP, clears OTP, and returns a reset token', async () => {
+    const otpHash = await bcrypt.hash('123456', 4);
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      password: await bcrypt.hash('OldPass123!', 4),
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: true,
+      provider: 'local',
+      tokenVersion: 0,
+      authSecurity: {
+        passwordResetOtpHash: otpHash,
+        passwordResetOtpExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    redis.get.mockResolvedValue({
+      hash: otpHash,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    const result = await service.verifyPasswordResetOtp({
+      email: 'field@example.com',
+      otp: '123456',
+    });
+
+    expect(result).toMatchObject({
+      verified: true,
+      resetToken: expect.any(String),
+      expiresIn: expect.any(Number),
+    });
+    expect(redis.del).toHaveBeenCalledWith('app:otp:password-reset:user-1');
+    expect(mongo.authSecurity.update).toHaveBeenCalledWith({
+      where: { authId: 'user-1' },
+      data: {
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+      },
+    });
+    expect(redis.set).toHaveBeenCalledWith(
+      'app:password_reset_token:user-1',
+      expect.objectContaining({
+        hash: expect.any(String),
+        expiresAt: expect.any(String),
+      }),
+      expect.any(Number),
+    );
+  });
+
+  it('resets password with verified reset token and clears the token', async () => {
+    const resetToken = 'verified-reset-token';
+    const resetTokenHash = await bcrypt.hash(resetToken, 4);
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      password: await bcrypt.hash('OldPass123!', 4),
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: true,
+      provider: 'local',
+      tokenVersion: 0,
+      authSecurity: {
+        passwordResetTokenHash: resetTokenHash,
+        passwordResetTokenExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    redis.get.mockResolvedValue({
+      hash: resetTokenHash,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    mongo.authUser.update.mockImplementation(({ data }) =>
+      Promise.resolve({
+        id: 'user-1',
+        tokenVersion: 1,
+        password: data.password,
+      }),
+    );
+
+    await service.resetPassword({
+      email: 'field@example.com',
+      resetToken,
+      newPassword: 'NewPass123!',
+    });
+
+    expect(redis.del).toHaveBeenCalledWith('app:password_reset_token:user-1');
+    expect(mongo.authSecurity.update).toHaveBeenCalledWith({
+      where: { authId: 'user-1' },
+      data: {
+        passwordResetTokenHash: null,
+        passwordResetTokenExpiresAt: null,
+      },
+    });
+  });
+
   it('does not reveal missing accounts in forgot password', async () => {
     mongo.authUser.findFirst.mockResolvedValue(null);
 

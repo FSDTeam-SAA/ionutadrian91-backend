@@ -40,6 +40,12 @@ export class AuthSecurity {
 
   @Prop({ type: Date, default: null })
   passwordResetOtpLastSentAt?: Date | null;
+
+  @Prop({ type: String, default: null })
+  passwordResetTokenHash?: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetTokenExpiresAt?: Date | null;
 }
 
 export const AuthSecuritySchema = SchemaFactory.createForClass(AuthSecurity);

@@ -5,7 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { randomInt, randomUUID } from 'crypto';
+import { randomBytes, randomInt, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import config from '../../common/config/app.config';
@@ -20,6 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { OtpPurpose, ResendOtpDto } from './dto/resend-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import {
   AuthResponse,
   AuthenticatedUser,
@@ -35,10 +36,16 @@ const BCRYPT_ROUNDS = 12;
 const OTP_TTL_MS = 10 * 60 * 1000;
 const VERIFY_EMAIL_OTP_TTL_MS = 24 * 60 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const PASSWORD_RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 type OtpKind = 'email-verification' | 'password-reset';
 
 interface OtpRecord {
+  hash: string;
+  expiresAt: string;
+}
+
+interface ResetTokenRecord {
   hash: string;
   expiresAt: string;
 }
@@ -192,6 +199,37 @@ export class AuthService {
     return { otpSentIfAccountExists: true };
   }
 
+  async verifyPasswordResetOtp(
+    dto: VerifyOtpDto,
+  ): Promise<{ verified: true; resetToken: string; expiresIn: number }> {
+    const user = await this.findByEmail(dto.email);
+    if (
+      !user ||
+      user.status !== UserStatus.Active ||
+      user.provider !== 'local' ||
+      !user.verified
+    ) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    await this.assertValidOtpForUser(
+      user.id,
+      'password-reset',
+      dto.otp,
+      user.authSecurity?.passwordResetOtpHash,
+      user.authSecurity?.passwordResetOtpExpiresAt,
+    );
+
+    await this.clearStoredOtp(user.id, 'password-reset');
+    const { token, expiresIn } = await this.issuePasswordResetToken(user.id);
+
+    return {
+      verified: true,
+      resetToken: token,
+      expiresIn,
+    };
+  }
+
   async resendOtp(dto: ResendOtpDto): Promise<{ otpSent: true }> {
     const user = await this.findByEmail(dto.email);
     if (!user) {
@@ -249,13 +287,7 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    await this.assertValidOtpForUser(
-      user.id,
-      'password-reset',
-      dto.otp,
-      user.authSecurity?.passwordResetOtpHash,
-      user.authSecurity?.passwordResetOtpExpiresAt,
-    );
+    await this.assertPasswordResetAuthorization(user, dto);
 
     const passwordMatches = await bcrypt.compare(
       dto.newPassword,
@@ -276,6 +308,7 @@ export class AuthService {
     await this.clearStoredOtp(user.id, 'password-reset', {
       lastPasswordChange: new Date(),
     });
+    await this.clearPasswordResetToken(user.id);
     await this.cacheTokenVersion(user.id, updated.tokenVersion as number);
     await this.redis.deleteByPattern(
       `${config.redis_cache_key_prefix}:refresh:${user.id}:*`,
@@ -551,6 +584,59 @@ export class AuthService {
     await this.assertValidOtp(otp, fallbackHash, fallbackExpiresAt);
   }
 
+  private async assertPasswordResetAuthorization(
+    user: any,
+    dto: ResetPasswordDto,
+  ) {
+    if (dto.resetToken) {
+      await this.assertValidPasswordResetToken(
+        user.id,
+        dto.resetToken,
+        user.authSecurity?.passwordResetTokenHash,
+        user.authSecurity?.passwordResetTokenExpiresAt,
+      );
+      return;
+    }
+
+    if (dto.otp) {
+      await this.assertValidOtpForUser(
+        user.id,
+        'password-reset',
+        dto.otp,
+        user.authSecurity?.passwordResetOtpHash,
+        user.authSecurity?.passwordResetOtpExpiresAt,
+      );
+      return;
+    }
+
+    throw new BadRequestException('Reset token or OTP is required');
+  }
+
+  private async assertValidPasswordResetToken(
+    userId: string,
+    token: string,
+    fallbackHash?: string | null,
+    fallbackExpiresAt?: Date | string | null,
+  ) {
+    const redisToken = await this.redis.get<ResetTokenRecord>(
+      this.passwordResetTokenKey(userId),
+    );
+
+    if (redisToken) {
+      await this.assertValidHash(
+        token,
+        redisToken.hash,
+        redisToken.expiresAt,
+        async () => {
+          await this.redis.del(this.passwordResetTokenKey(userId));
+        },
+      );
+      return;
+    }
+
+    await this.assertValidHash(token, fallbackHash, fallbackExpiresAt);
+  }
+
   private async assertValidOtp(
     otp: string,
     otpHash?: string | null,
@@ -564,7 +650,23 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    const matches = await bcrypt.compare(otp, otpHash);
+    await this.assertValidHash(otp, otpHash, expiresAt);
+  }
+
+  private async assertValidHash(
+    value: string,
+    hash?: string | null,
+    expiresAt?: Date | string | null,
+    onExpired?: () => Promise<void>,
+  ) {
+    if (!hash || !expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      if (onExpired) {
+        await onExpired();
+      }
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    const matches = await bcrypt.compare(value, hash);
     if (!matches) {
       throw new BadRequestException('Invalid or expired OTP');
     }
@@ -653,6 +755,40 @@ export class AuthService {
     });
   }
 
+  private async issuePasswordResetToken(
+    userId: string,
+  ): Promise<{ token: string; expiresIn: number }> {
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MS);
+    const record: ResetTokenRecord = {
+      hash: await bcrypt.hash(token, BCRYPT_ROUNDS),
+      expiresAt: expiresAt.toISOString(),
+    };
+    const expiresIn = Math.ceil(PASSWORD_RESET_TOKEN_TTL_MS / 1000);
+
+    await this.redis.set(this.passwordResetTokenKey(userId), record, expiresIn);
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        passwordResetTokenHash: record.hash,
+        passwordResetTokenExpiresAt: expiresAt,
+      },
+    });
+
+    return { token, expiresIn };
+  }
+
+  private async clearPasswordResetToken(userId: string) {
+    await this.redis.del(this.passwordResetTokenKey(userId));
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        passwordResetTokenHash: null,
+        passwordResetTokenExpiresAt: null,
+      },
+    });
+  }
+
   private async recordFailedLogin(userId: string) {
     await this.mongo.authSecurity.update({
       where: { authId: userId },
@@ -687,6 +823,10 @@ export class AuthService {
 
   private otpKey(userId: string, kind: OtpKind) {
     return `${config.redis_cache_key_prefix}:otp:${kind}:${userId}`;
+  }
+
+  private passwordResetTokenKey(userId: string) {
+    return `${config.redis_cache_key_prefix}:password_reset_token:${userId}`;
   }
 
   private get refreshSecret() {

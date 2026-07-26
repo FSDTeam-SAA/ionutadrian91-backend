@@ -26,6 +26,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyOtpDto, VerifyOtpResponseDto } from './dto/verify-otp.dto';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { ClientPlatform } from './interfaces/auth.interface';
@@ -102,6 +103,24 @@ export class AuthController {
   @ApiResponseDecorator(200, 'Password reset OTP sent when account exists')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
+  }
+
+  @Post('verify-otp')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
+  @HttpCode(HttpStatus.OK)
+  @ApiResponseDecorator(
+    200,
+    'Password reset OTP verified',
+    VerifyOtpResponseDto,
+  )
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyPasswordResetOtp(dto);
   }
 
   @Post('resend-otp')

@@ -11,7 +11,7 @@ export function setupScalarDocs(app: INestApplication): void {
         'Production API for the ionutadrian91 operational platform.',
         '',
         'Core capabilities:',
-        '- Email-first authentication: register, verify email, login, forgot password, resend OTP, change password, logout.',
+        '- Email-first authentication: register, verify email, login, forgot password, verify OTP, resend OTP, change password, logout.',
         '- Three-role access model: Administrator, Office, and Field.',
         '- Field users are mobile-only and must send `x-client-platform: mobile` with authenticated requests.',
         '- MongoDB persistence, Redis-backed token/session cache, BullMQ email processing, and Redis rate limiting.',
@@ -35,13 +35,20 @@ export function setupScalarDocs(app: INestApplication): void {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Paste the JWT access token returned from `POST /auth/login`.',
+        description:
+          'Paste the JWT access token returned from `POST /auth/login`.',
         in: 'header',
       },
       'bearer',
     )
-    .addTag('Auth', 'Authentication, verification, password reset, token refresh, and logout.')
-    .addTag('Users', 'Administrator/Office user management and self-service profile endpoints.')
+    .addTag(
+      'Auth',
+      'Authentication, verification, password reset, token refresh, and logout.',
+    )
+    .addTag(
+      'Users',
+      'Administrator/Office user management and self-service profile endpoints.',
+    )
     .addTag('health', 'Runtime health checks.')
     .addTag('metrics', 'Operational metrics and monitoring endpoints.')
     .build();
