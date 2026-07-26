@@ -12,10 +12,6 @@ interface AppConfig {
   email_pass: string;
   email_from: string;
   mongodb_uri: string;
-  // Google OAuth
-  google_client_id: string;
-  google_client_secret: string;
-  google_redirect_uri: string;
 }
 
 const config: AppConfig = {
@@ -32,11 +28,8 @@ const config: AppConfig = {
   email_pass: process.env.EMAIL_PASS || '',
   email_from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
   mongodb_uri:
-    process.env.MONGODB_URI || 'mongodb://localhost:27017/ionutadrian91_backend',
-  // Google OAuth
-  google_client_id: process.env.GOOGLE_CLIENT_ID || '',
-  google_client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
-  google_redirect_uri: process.env.GOOGLE_REDIRECT_URI || '',
+    process.env.MONGODB_URI ||
+    'mongodb://admin:admin@localhost:27017/ionutadrian91_backend?authSource=admin',
 };
 
 export default config;

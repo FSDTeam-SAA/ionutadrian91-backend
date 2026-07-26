@@ -9,7 +9,7 @@ import {
 } from 'nest-winston';
 import { Logger } from 'winston';
 import helmet from 'helmet';
-import { setupScalarDocs } from './common/config/swagger.config';
+import { setupScalarDocs } from './common/config/scalar.config';
 // import { AllExceptionFilter } from './common/filters/all-exception.filter';
 
 async function bootstrap() {
@@ -37,9 +37,14 @@ async function bootstrap() {
           contentSecurityPolicy: {
             directives: {
               defaultSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'"],
+              styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
               imgSrc: ["'self'", 'data:', 'https:'],
-              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+              scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "'unsafe-eval'",
+                'https://cdn.jsdelivr.net',
+              ],
             },
           },
           frameguard: { action: 'deny' as const },
@@ -59,9 +64,9 @@ async function bootstrap() {
           contentSecurityPolicy: {
             directives: {
               defaultSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'"],
+              styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
               imgSrc: ["'self'", 'data:', 'https:'],
-              scriptSrc: ["'self'"],
+              scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
             },
           },
           frameguard: { action: 'deny' as const },
@@ -80,15 +85,6 @@ async function bootstrap() {
 
   app.use(helmet(helmetConfig));
 
-  // Setup Scalar API Reference backed by the generated OpenAPI document.
-  // In production, you may want to disable or protect this endpoint.
-  if (!isProduction || enableDocs) {
-    setupScalarDocs(app);
-    nestLogger.log('Scalar API documentation available at /docs', 'Bootstrap');
-  } else {
-    nestLogger.log('API documentation disabled in production', 'Bootstrap');
-  }
-
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // strips unknown properties
@@ -96,6 +92,18 @@ async function bootstrap() {
       transform: true, // automatically converts types (like string -> number)
     }),
   );
+
+  // Setup Scalar API Reference backed by the generated OpenAPI document.
+  // In production, you may want to disable or protect this endpoint.
+  if (!isProduction || enableDocs) {
+    setupScalarDocs(app);
+    nestLogger.log(
+      'Scalar API documentation available at /api-docs/',
+      'Bootstrap',
+    );
+  } else {
+    nestLogger.log('API documentation disabled in production', 'Bootstrap');
+  }
 
   nestLogger.log('Application is starting...', 'Bootstrap');
 

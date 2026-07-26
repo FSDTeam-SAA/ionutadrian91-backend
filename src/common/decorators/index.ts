@@ -1,8 +1,7 @@
 /**
- * Swagger Decorators and Utilities
+ * OpenAPI Decorators and Utilities
  *
- * This module exports all Swagger-related decorators and utilities.
- * These make it easy to document APIs without repeating boilerplate.
+ * These decorators feed the generated OpenAPI document rendered by Scalar.
  *
  * Basic usage examples:
  *
@@ -16,7 +15,7 @@
  * @ApiPaginatedResponseDecorator(UserEntity)
  *
  * 4. For authenticated endpoints, add:
- * @ApiBearerAuth('JWT-auth')
+ * @ApiBearerAuth()
  */
 
 // Response decorators

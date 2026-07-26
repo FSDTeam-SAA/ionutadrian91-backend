@@ -9,8 +9,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { ApiResponseDecorator } from '../../common/decorators';
+import { THROTTLER_CONFIG } from '../../common/config/throttler.config';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -26,9 +28,7 @@ import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
-import {
-  ClientPlatform,
-} from './interfaces/auth.interface';
+import { ClientPlatform } from './interfaces/auth.interface';
 import type { AuthenticatedUser } from './interfaces/auth.interface';
 
 @ApiTags('Auth')
@@ -37,12 +37,26 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
   @ApiResponseDecorator(201, 'Field user registered', RegisterResponseDto)
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('verify-email')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   @ApiResponseDecorator(200, 'Email verified')
   verifyEmail(@Body() dto: VerifyEmailDto) {
@@ -50,6 +64,13 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.AUTH.limit,
+      ttl: THROTTLER_CONFIG.AUTH.ttl,
+      blockDuration: THROTTLER_CONFIG.AUTH.ttl,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   @ApiResponseDecorator(200, 'User logged in', AuthResponseDto)
   login(
@@ -70,6 +91,13 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   @ApiResponseDecorator(200, 'Password reset OTP sent when account exists')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
@@ -77,6 +105,13 @@ export class AuthController {
   }
 
   @Post('resend-otp')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   @ApiResponseDecorator(200, 'OTP resent')
   resendOtp(@Body() dto: ResendOtpDto) {
@@ -84,6 +119,13 @@ export class AuthController {
   }
 
   @Post('change-password')
+  @Throttle({
+    default: {
+      limit: THROTTLER_CONFIG.STRICT.limit,
+      ttl: THROTTLER_CONFIG.STRICT.ttl,
+      blockDuration: THROTTLER_CONFIG.STRICT.ttl,
+    },
+  })
   @HttpCode(HttpStatus.OK)
   @ApiResponseDecorator(200, 'Password changed')
   resetPassword(@Body() dto: ResetPasswordDto) {

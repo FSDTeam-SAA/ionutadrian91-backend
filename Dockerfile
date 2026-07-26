@@ -1,86 +1,29 @@
-# FROM node:20-alpine
-
-# WORKDIR /app
-
-# # Copy package.json first for caching
-# COPY package*.json ./
-
-# # Install dependencies
-# RUN npm install
-
-# # Copy the rest of your app
-# COPY . .
-
-# # Build NestJS app
-# RUN npm run build
-
-# EXPOSE 5000
-
-# # Start the app
-# CMD ["node", "dist/main.js"]
-
-
-# # FROM node:20-alpine
-
-# # WORKDIR /app
-
-# # COPY package*.json ./
-# # RUN npm install
-
-# # COPY . .
-
-# # EXPOSE 3000
-
-# # # Start Nest in dev mode
-# # CMD ["npm", "run", "start:dev"]
-
-
-
-# FROM node:20-alpine
-
-# WORKDIR /app
-
-# # Copy package.json and package-lock.json first for better caching
-# COPY package*.json ./
-# # Install dependencies
-# RUN npm install
-
-# # Copy the rest of your app
-# COPY . .
-
-
-# # Build NestJS app
-# RUN npm run build
-
-# EXPOSE 5000
-
-# # Start the app in production mode
-# CMD ["node", "dist/src/main.js"]
-
-# ---------- Build Stage ----------
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
-
 RUN npm ci
 
 COPY . .
-
 RUN npm run build
 
-
-# ---------- Runtime Stage ----------
 FROM node:22-alpine
 
 WORKDIR /app
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY package*.json ./
+RUN apk add --no-cache dumb-init
 
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/templates ./templates
+
+ENV ENABLE_API_DOCS=false
 ENV NODE_ENV=production
 
 EXPOSE 5000
-CMD ["node", "dist/src/main.js"]
+USER node
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/main.js"]

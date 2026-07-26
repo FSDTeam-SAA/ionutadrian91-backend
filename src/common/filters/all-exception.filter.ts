@@ -22,30 +22,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // Ignore favicon requests - this is normal browser behavior
-    if (request.url === '/favicon.ico') {
+    // Ignore browser infrastructure probes.
+    if (
+      request.url === '/favicon.ico' ||
+      request.url === '/.well-known/appspecific/com.chrome.devtools.json'
+    ) {
       response.status(204).end();
       return;
     }
 
-    console.log('all exceptions', exception);
-
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal Server Error';
     let error = 'Error';
-
-    // Log the exception
-    this.logger.error('Unhandled exception caught', {
-      context: 'AllExceptionsFilter',
-      statusCode,
-      path: request.url,
-      method: request.method,
-      exception:
-        exception instanceof Error ? exception.message : String(exception),
-      stack: exception instanceof Error ? exception.stack : undefined,
-    });
-    // let errorCode: string | undefined = undefined;
-    // let errorFields: string[] | undefined = undefined;
+    let responseBody: Record<string, unknown> = {};
 
     // Check if exception has a status property
     if (
@@ -62,13 +51,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode = exception.getStatus();
       const res = exception.getResponse();
       if (typeof res === 'string') message = res;
-      else if (typeof res === 'object' && res['message']) {
+      else if (typeof res === 'object' && res !== null) {
+        responseBody = res as Record<string, unknown>;
+      }
+
+      if (responseBody['message']) {
         const resMessage = res['message'] as string | string[];
         message = Array.isArray(resMessage)
           ? resMessage.join(', ')
           : String(resMessage);
       }
-      error = exception.name;
+      error =
+        typeof responseBody['error'] === 'string'
+          ? responseBody['error']
+          : exception.name;
     }
 
     // Generic JS Error
@@ -78,7 +74,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
       error = exception.name;
     }
 
+    const logPayload = {
+      context: 'AllExceptionsFilter',
+      statusCode,
+      path: request.url,
+      method: request.method,
+      exception:
+        exception instanceof Error ? exception.message : String(exception),
+      stack:
+        statusCode >= HttpStatus.INTERNAL_SERVER_ERROR &&
+        exception instanceof Error
+          ? exception.stack
+          : undefined,
+    };
+
+    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error('Unhandled server exception caught', logPayload);
+    } else {
+      this.logger.warn('Handled HTTP exception', logPayload);
+    }
+
     response.status(statusCode).json({
+      ...responseBody,
       success: false,
       statusCode,
       message,
