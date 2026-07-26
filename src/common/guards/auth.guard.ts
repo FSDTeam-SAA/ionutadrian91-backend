@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,10 +10,12 @@ import * as jwt from 'jsonwebtoken';
 import config from '../config/app.config';
 import { RedisService } from '../services/redis.service';
 import { MongoService } from '../services/mongo.service';
+import { UserRole } from '../schemas';
+import { ClientPlatform } from '../../modules/auth/interfaces/auth.interface';
 
 interface IAccessTokenPayload {
   userId: string;
-  role: string;
+  role: UserRole;
   tokenVersion: number;
 }
 
@@ -46,6 +49,8 @@ export class AuthGuard implements CanActivate {
         );
       }
 
+      this.assertPlatformAccess(payload.role, request);
+
       // Attach user to request for downstream use
       Object.assign(request, { user: payload });
 
@@ -60,7 +65,21 @@ export class AuthGuard implements CanActivate {
       if (error instanceof UnauthorizedException) {
         throw error;
       }
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
       throw new UnauthorizedException('Authentication failed');
+    }
+  }
+
+  private assertPlatformAccess(role: UserRole, request: Request) {
+    if (role !== UserRole.Field) {
+      return;
+    }
+
+    const platform = String(request.headers['x-client-platform'] || '').toLowerCase();
+    if (platform !== ClientPlatform.Mobile) {
+      throw new ForbiddenException('Field users can access mobile only');
     }
   }
 

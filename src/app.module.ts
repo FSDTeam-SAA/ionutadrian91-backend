@@ -11,6 +11,7 @@ import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './common/config/winston.config';
 import { LoggerModule } from './common/modules/logger.module';
 import { MongoModule } from './common/modules/mongo.module';
+import { QueueModule } from './common/modules/queue.module';
 
 @Module({
   imports: [
@@ -31,6 +32,8 @@ import { MongoModule } from './common/modules/mongo.module';
     RateLimitModule,
     // Metrics module (global - Prometheus metrics)
     MetricsModule,
+    // Background email queue
+    QueueModule,
     AuthModule,
     UserModule,
   ],

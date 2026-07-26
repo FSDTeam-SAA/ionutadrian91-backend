@@ -9,7 +9,7 @@ import {
 } from 'nest-winston';
 import { Logger } from 'winston';
 import helmet from 'helmet';
-import { setupSwagger } from './common/config/swagger.config';
+import { setupScalarDocs } from './common/config/swagger.config';
 // import { AllExceptionFilter } from './common/filters/all-exception.filter';
 
 async function bootstrap() {
@@ -25,21 +25,21 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter(winstonLogger));
   app.useGlobalInterceptors(new TransformInterceptor(winstonLogger));
 
-  // Check environment for Swagger setup
+  // Check environment for API documentation setup
   const isProduction = process.env.NODE_ENV === 'production';
-  const enableSwagger = process.env.ENABLE_SWAGGER !== 'false'; // Default to true
+  const enableDocs = process.env.ENABLE_API_DOCS !== 'false'; // Default to true
 
-  // Security middleware - helmet helps secure Express apps by setting HTTP response headers
-  // Adjust CSP for Swagger UI if enabled
+  // Security middleware - helmet helps secure Express apps by setting HTTP response headers.
+  // Scalar API Reference needs inline script/style permissions for its browser UI.
   const helmetConfig =
-    !isProduction || enableSwagger
+    !isProduction || enableDocs
       ? {
           contentSecurityPolicy: {
             directives: {
               defaultSrc: ["'self'"],
               styleSrc: ["'self'", "'unsafe-inline'"],
               imgSrc: ["'self'", 'data:', 'https:'],
-              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Required for Swagger UI
+              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
             },
           },
           frameguard: { action: 'deny' as const },
@@ -80,13 +80,13 @@ async function bootstrap() {
 
   app.use(helmet(helmetConfig));
 
-  // Setup Swagger documentation
-  // In production, you may want to disable or protect this endpoint
-  if (!isProduction || enableSwagger) {
-    setupSwagger(app);
-    nestLogger.log('Swagger documentation available at /docs', 'Bootstrap');
+  // Setup Scalar API Reference backed by the generated OpenAPI document.
+  // In production, you may want to disable or protect this endpoint.
+  if (!isProduction || enableDocs) {
+    setupScalarDocs(app);
+    nestLogger.log('Scalar API documentation available at /docs', 'Bootstrap');
   } else {
-    nestLogger.log('Swagger documentation disabled in production', 'Bootstrap');
+    nestLogger.log('API documentation disabled in production', 'Bootstrap');
   }
 
   app.useGlobalPipes(

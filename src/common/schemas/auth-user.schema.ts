@@ -3,6 +3,18 @@ import { HydratedDocument } from 'mongoose';
 
 export type AuthUserDocument = HydratedDocument<AuthUser>;
 
+export enum UserRole {
+  Administrator = 'ADMINISTRATOR',
+  Office = 'OFFICE',
+  Field = 'FIELD',
+}
+
+export enum UserStatus {
+  Active = 'ACTIVE',
+  Inactive = 'INACTIVE',
+  Suspended = 'SUSPENDED',
+}
+
 @Schema({ timestamps: true, collection: 'auth_users' })
 export class AuthUser {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
@@ -14,14 +26,22 @@ export class AuthUser {
   @Prop({ required: true, default: '' })
   password: string;
 
-  @Prop({ required: true, default: 'USER' })
-  role: string;
+  @Prop({
+    required: true,
+    enum: Object.values(UserRole),
+    default: UserRole.Field,
+  })
+  role: UserRole;
 
   @Prop({ required: true, default: false })
   verified: boolean;
 
-  @Prop({ required: true, default: 'ACTIVE' })
-  status: string;
+  @Prop({
+    required: true,
+    enum: Object.values(UserStatus),
+    default: UserStatus.Active,
+  })
+  status: UserStatus;
 
   @Prop({ required: true, default: 'local' })
   provider: string;

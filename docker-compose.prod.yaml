@@ -2,8 +2,8 @@ services:
 
   
   backend:
-    container_name: simple_blog_backend
-    image: thepujon/simple_blog_backend:latest
+    container_name: ionutadrian91_backend
+    image: ionutadrian91/ionutadrian91-backend:latest
     # build:
     #   context: ./
     #   dockerfile: Dockerfile  
@@ -13,16 +13,16 @@ services:
       MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD:-admin}@mongodb:27017/${MONGO_INITDB_DATABASE:-ionutadrian91_backend}?authSource=admin
       NODE_ENV: ${NODE_ENV}
 
-      REDIS_HOST: redis
+      REDIS_HOST: redis-stack
       REDIS_PORT: 6379
       REDIS_USER: ${REDIS_USER}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
 
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: 1000
     depends_on:
       - mongodb
       - mongo_express
-      - redis
+      - redis-stack
     networks:
       - blog_network

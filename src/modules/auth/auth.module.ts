@@ -1,24 +1,13 @@
 import { Module } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { QueueModule } from '../../common/modules/queue.module';
+import { RedisModule } from '../../common/modules/redis.module';
 import { AuthController } from './auth.controller';
-import { AuthUtilsService } from './services/auth-utils.service';
-import { GoogleOAuthService } from './services/google-oauth.service';
-import { ActivityLogService } from '../../common/services/activity-log.service';
-import { EmailService } from '../../common/services/email.service';
-import { RedisService } from '../../common/services/redis.service';
-import { QueueModule } from '../../common/modules';
+import { AuthService } from './auth.service';
 
 @Module({
-  imports: [QueueModule],
+  imports: [QueueModule, RedisModule],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    AuthUtilsService,
-    GoogleOAuthService,
-    ActivityLogService,
-    EmailService,
-    RedisService,
-  ],
-  exports: [AuthUtilsService, GoogleOAuthService],
+  providers: [AuthService],
+  exports: [AuthService],
 })
 export class AuthModule {}
