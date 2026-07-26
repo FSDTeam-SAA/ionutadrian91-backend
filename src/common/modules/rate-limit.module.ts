@@ -58,7 +58,7 @@ import { CustomThrottlerGuard } from '../guards/custom-throttler.guard';
   ],
   providers: [
     // Apply custom rate limiting globally to all routes
-    // This guard skips Swagger, metrics, and other infrastructure endpoints
+    // This guard skips API docs, metrics, and other infrastructure endpoints
     {
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,

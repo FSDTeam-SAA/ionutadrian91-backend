@@ -9,7 +9,7 @@ import { MetricsService } from './metrics.service';
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
-  @ApiExcludeEndpoint() // Exclude from Swagger as it returns Prometheus format
+  @ApiExcludeEndpoint() // Exclude from OpenAPI docs as it returns Prometheus format
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4')
   async getMetrics(): Promise<string> {

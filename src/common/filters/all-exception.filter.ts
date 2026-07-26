@@ -22,13 +22,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // Ignore favicon requests - this is normal browser behavior
-    if (request.url === '/favicon.ico') {
+    // Ignore browser infrastructure probes.
+    if (
+      request.url === '/favicon.ico' ||
+      request.url === '/.well-known/appspecific/com.chrome.devtools.json'
+    ) {
       response.status(204).end();
       return;
     }
-
-    console.log('all exceptions', exception);
 
     let statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal Server Error';

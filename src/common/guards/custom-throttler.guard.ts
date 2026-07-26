@@ -4,7 +4,7 @@ import { Reflector } from '@nestjs/core';
 
 /**
  * Custom Throttler Guard that skips rate limiting for:
- * - Swagger/OpenAPI endpoints (/docs, /docs-json, etc.)
+ * - Scalar/OpenAPI endpoints (/api-docs, /api-docs/openapi.json, etc.)
  * - Metrics endpoints (/metrics)
  * - Health check endpoints
  */
@@ -22,12 +22,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const request = context.switchToHttp().getRequest();
     const path = request.url as string;
 
-    // Skip throttling for Swagger/OpenAPI documentation
+    // Skip throttling for Scalar/OpenAPI documentation
     if (
-      path.startsWith('/docs') ||
+      path.startsWith('/api-docs') ||
       path.startsWith('/api-json') ||
-      path.startsWith('/swagger') ||
-      path.includes('swagger') ||
       path.includes('-json')
     ) {
       return true;
