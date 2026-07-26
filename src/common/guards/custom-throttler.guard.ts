@@ -72,6 +72,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   }
 
   protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+    if (this.isRateLimitDisabled()) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<{ url: string }>();
     const path = request.url;
 
@@ -96,6 +100,17 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 
     // Check if route has @SkipThrottle decorator
     return super.shouldSkip(context);
+  }
+
+  private isRateLimitDisabled(): boolean {
+    if (process.env.RATE_LIMIT_ENABLED === 'false') {
+      return true;
+    }
+
+    return (
+      process.env.RATE_LIMIT_ENABLED === undefined &&
+      process.env.NODE_ENV !== 'production'
+    );
   }
 
   private getRateLimitMessage(path: string, retryAfterSeconds: number): string {

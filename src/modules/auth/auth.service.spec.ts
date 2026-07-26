@@ -152,10 +152,73 @@ describe('AuthService', () => {
 
     await expect(
       service.login({
-        identifier: 'field@example.com',
+        email: 'field@example.com',
         password: 'StrongerPass123!',
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('uses email and password for login lookup', async () => {
+    mongo.authUser.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.login({
+        email: 'FIELD@example.com',
+        password: 'StrongerPass123!',
+      }),
+    ).rejects.toThrow('Invalid credentials');
+
+    expect(mongo.authUser.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: 'field@example.com',
+      },
+    });
+  });
+
+  it('returns access and refresh tokens after successful login', async () => {
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'office@example.com',
+      username: 'office.user',
+      password: await bcrypt.hash('StrongerPass123!', 4),
+      role: UserRole.Office,
+      status: UserStatus.Active,
+      verified: true,
+      provider: 'local',
+      tokenVersion: 0,
+    });
+    mongo.authUser.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'office@example.com',
+      username: 'office.user',
+      role: UserRole.Office,
+      status: UserStatus.Active,
+      verified: true,
+      provider: 'local',
+      tokenVersion: 0,
+    });
+    mongo.userProfile.findFirst.mockResolvedValue({
+      firstName: 'Office',
+      lastName: 'User',
+    });
+
+    const result = await service.login({
+      email: 'office@example.com',
+      password: 'StrongerPass123!',
+    });
+
+    expect(result.accessToken).toEqual(expect.any(String));
+    expect(result.refreshToken).toEqual(expect.any(String));
+    expect(result.user).toMatchObject({
+      id: 'user-1',
+      email: 'office@example.com',
+      role: UserRole.Office,
+    });
+    expect(redis.set).toHaveBeenCalledWith(
+      expect.stringContaining('app:refresh:user-1:'),
+      true,
+      expect.any(Number),
+    );
   });
 
   it('resets password with OTP, hashes it, and revokes existing tokens', async () => {

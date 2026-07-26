@@ -139,10 +139,7 @@ export class AuthService {
   async login(dto: LoginDto): Promise<AuthResponse> {
     const user = await this.mongo.authUser.findFirst({
       where: {
-        OR: [
-          { email: dto.identifier.toLowerCase() },
-          { username: dto.identifier },
-        ],
+        email: dto.email.toLowerCase(),
       },
     });
 
