@@ -5,6 +5,10 @@ import type { ThrottlerStorage } from '@nestjs/throttler/dist/throttler-storage.
 import { CustomThrottlerGuard } from './custom-throttler.guard';
 
 class TestThrottlerGuard extends CustomThrottlerGuard {
+  shouldSkipForTest(context: ExecutionContext): Promise<boolean> {
+    return this.shouldSkip(context);
+  }
+
   throwForTest(
     context: ExecutionContext,
     detail: ThrottlerLimitDetail,
@@ -14,6 +18,37 @@ class TestThrottlerGuard extends CustomThrottlerGuard {
 }
 
 describe('CustomThrottlerGuard', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('skips throttling for every route in development', async () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.RATE_LIMIT_ENABLED;
+
+    const storage: ThrottlerStorage = {
+      increment: jest.fn(),
+    };
+    const guard = new TestThrottlerGuard(
+      { throttlers: [] },
+      storage,
+      new Reflector(),
+    );
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => ({ url: '/auth/register' }),
+      }),
+    } as ExecutionContext;
+
+    await expect(guard.shouldSkipForTest(context)).resolves.toBe(true);
+  });
+
   it('throws a user-friendly registration rate-limit response', async () => {
     const storage: ThrottlerStorage = {
       increment: jest.fn(),
