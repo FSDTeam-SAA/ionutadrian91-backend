@@ -126,6 +126,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
 
     if (
       path.startsWith('/auth/forgot-password') ||
+      path.startsWith('/auth/verify-otp') ||
       path.startsWith('/auth/resend-otp') ||
       path.startsWith('/auth/change-password')
     ) {
