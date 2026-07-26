@@ -28,26 +28,12 @@ import { CustomThrottlerGuard } from '../guards/custom-throttler.guard';
         });
 
         return {
+          errorMessage: 'Too many requests. Please wait before trying again.',
           throttlers: [
             {
               name: 'default',
               ttl: THROTTLER_CONFIG.DEFAULT.ttl,
               limit: THROTTLER_CONFIG.DEFAULT.limit,
-            },
-            {
-              name: 'strict',
-              ttl: THROTTLER_CONFIG.STRICT.ttl,
-              limit: THROTTLER_CONFIG.STRICT.limit,
-            },
-            {
-              name: 'auth',
-              ttl: THROTTLER_CONFIG.AUTH.ttl,
-              limit: THROTTLER_CONFIG.AUTH.limit,
-            },
-            {
-              name: 'relaxed',
-              ttl: THROTTLER_CONFIG.RELAXED.ttl,
-              limit: THROTTLER_CONFIG.RELAXED.limit,
             },
           ],
           storage: new ThrottlerStorageRedisService(redisClient),
