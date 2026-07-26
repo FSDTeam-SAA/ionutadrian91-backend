@@ -14,6 +14,8 @@ export interface EmailOptions {
   html?: string;
 }
 
+export type EmailDeliveryStatus = 'sent' | 'skipped';
+
 @Injectable()
 export class EmailService {
   private transporter: nodemailer.Transporter;
@@ -33,11 +35,20 @@ export class EmailService {
   /**
    * Send an email
    */
-  async sendEmail(options: EmailOptions): Promise<void> {
+  async sendEmail(options: EmailOptions): Promise<EmailDeliveryStatus> {
     this.customLogger.log(
       `Sending email to: ${options.to}, subject: ${options.subject}`,
       'EmailService',
     );
+
+    if (!this.canSendEmail()) {
+      this.customLogger.warn(
+        `Email delivery skipped for ${options.to}; SMTP credentials are not configured.`,
+        'EmailService',
+      );
+      return 'skipped';
+    }
+
     const mailOptions = {
       from: String(config.email_from || config.email_user),
       to: options.to,
@@ -52,13 +63,13 @@ export class EmailService {
         `Email sent successfully to: ${options.to}`,
         'EmailService',
       );
+      return 'sent';
     } catch (error) {
       this.customLogger.error(
         `Error sending email to ${options.to}`,
         error instanceof Error ? error.stack : undefined,
         'EmailService',
       );
-      console.error('Error sending email:', error);
       throw AppError.badRequest('Email sending failed, something went wrong!');
     }
   }
@@ -103,14 +114,14 @@ export class EmailService {
     email: string,
     username: string,
     verificationCode: string,
-  ): Promise<void> {
+  ): Promise<EmailDeliveryStatus> {
     const html = this.getEmailTemplate('verification.html', {
       username,
       verificationCode,
       year: new Date().getFullYear().toString(),
     });
 
-    await this.sendEmail({
+    return this.sendEmail({
       to: email,
       subject: 'Verify your email address',
       html,
@@ -124,14 +135,14 @@ export class EmailService {
     email: string,
     username: string,
     resetCode: string,
-  ): Promise<void> {
+  ): Promise<EmailDeliveryStatus> {
     const html = this.getEmailTemplate('password-reset.html', {
       username,
       resetCode,
       year: new Date().getFullYear().toString(),
     });
 
-    await this.sendEmail({
+    return this.sendEmail({
       to: email,
       subject: 'Reset your password',
       html,
@@ -141,16 +152,25 @@ export class EmailService {
   /**
    * Send welcome email after verification
    */
-  async sendWelcomeEmail(email: string, username: string): Promise<void> {
+  async sendWelcomeEmail(
+    email: string,
+    username: string,
+  ): Promise<EmailDeliveryStatus> {
     const html = this.getEmailTemplate('welcome.html', {
       username,
       year: new Date().getFullYear().toString(),
     });
 
-    await this.sendEmail({
+    return this.sendEmail({
       to: email,
       subject: 'Welcome to our platform!',
       html,
     });
+  }
+
+  private canSendEmail(): boolean {
+    return Boolean(
+      config.email_enabled && config.email_user && config.email_pass,
+    );
   }
 }

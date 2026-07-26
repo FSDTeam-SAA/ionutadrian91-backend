@@ -11,6 +11,7 @@ interface AppConfig {
   email_user: string;
   email_pass: string;
   email_from: string;
+  email_enabled: boolean;
   mongodb_uri: string;
 }
 
@@ -24,9 +25,10 @@ const config: AppConfig = {
   port: parseInt(process.env.PORT || '5000', 10),
   email_host: process.env.EMAIL_HOST || 'smtp.gmail.com',
   email_port: parseInt(process.env.EMAIL_PORT || '587', 10),
-  email_user: process.env.EMAIL_USER || '',
+  email_user: process.env.EMAIL_USER || process.env.EMAIL_ADDRESS || '',
   email_pass: process.env.EMAIL_PASS || '',
   email_from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+  email_enabled: process.env.EMAIL_ENABLED !== 'false',
   mongodb_uri:
     process.env.MONGODB_URI ||
     'mongodb://admin:admin@localhost:27017/ionutadrian91_backend?authSource=admin',

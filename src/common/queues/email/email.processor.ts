@@ -58,14 +58,12 @@ export class EmailProcessor extends WorkerHost {
     const { email, username, verificationCode, authId } = data;
 
     try {
-      // Send the email
-      await this.emailService.sendVerificationEmail(
+      const deliveryStatus = await this.emailService.sendVerificationEmail(
         email,
         username,
         verificationCode,
       );
 
-      // Update email history status to 'sent'
       await this.mongoService.emailHistory.updateMany({
         where: {
           authId,
@@ -73,7 +71,7 @@ export class EmailProcessor extends WorkerHost {
           emailStatus: 'pending',
         },
         data: {
-          emailStatus: 'sent',
+          emailStatus: deliveryStatus,
         },
       });
 
@@ -112,11 +110,15 @@ export class EmailProcessor extends WorkerHost {
     const { email, username } = data;
 
     try {
-      await this.emailService.sendWelcomeEmail(email, username);
+      const deliveryStatus = await this.emailService.sendWelcomeEmail(
+        email,
+        username,
+      );
       this.logger.info(`Welcome email sent successfully to ${email}`, {
         context: 'EmailProcessor',
         jobId: job.id,
         email,
+        deliveryStatus,
       });
     } catch (error) {
       this.logger.error(`Failed to send welcome email to ${email}`, {
@@ -134,7 +136,11 @@ export class EmailProcessor extends WorkerHost {
     const { email, username, resetCode, authId } = data;
 
     try {
-      await this.emailService.sendPasswordResetEmail(email, username, resetCode);
+      const deliveryStatus = await this.emailService.sendPasswordResetEmail(
+        email,
+        username,
+        resetCode,
+      );
       await this.mongoService.emailHistory.updateMany({
         where: {
           authId,
@@ -142,7 +148,7 @@ export class EmailProcessor extends WorkerHost {
           emailStatus: 'pending',
         },
         data: {
-          emailStatus: 'sent',
+          emailStatus: deliveryStatus,
         },
       });
 

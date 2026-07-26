@@ -1,9 +1,12 @@
+import 'dotenv/config';
 import { WinstonModuleOptions } from 'nest-winston';
 import * as winston from 'winston';
 import LokiTransport from 'winston-loki';
 
-// Check if Loki is available
-const lokiEnabled = process.env.LOKI_ENABLED !== 'false';
+const lokiEnabled =
+  process.env.LOKI_ENABLED === undefined
+    ? process.env.NODE_ENV === 'production'
+    : process.env.LOKI_ENABLED === 'true';
 const lokiHost =
   process.env.LOKI_URL ||
   (process.env.NODE_ENV === 'production'

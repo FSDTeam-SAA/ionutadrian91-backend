@@ -79,11 +79,62 @@ describe('AuthService', () => {
 
     const savedPassword = mongo.authUser.create.mock.calls[0][0].data.password;
     expect(savedPassword).not.toBe('StrongerPass123!');
-    await expect(bcrypt.compare('StrongerPass123!', savedPassword)).resolves.toBe(
-      true,
-    );
+    await expect(
+      bcrypt.compare('StrongerPass123!', savedPassword),
+    ).resolves.toBe(true);
     expect(emailQueue.sendVerificationEmail).toHaveBeenCalled();
+    expect(redis.set).toHaveBeenCalledWith(
+      'app:otp:email-verification:user-1',
+      expect.objectContaining({
+        hash: expect.any(String),
+        expiresAt: expect.any(String),
+      }),
+      expect.any(Number),
+    );
     expect(result.verificationRequired).toBe(true);
+  });
+
+  it('verifies email and removes the OTP from Redis and MongoDB', async () => {
+    const otpHash = await bcrypt.hash('123456', 4);
+    mongo.authUser.findFirst.mockResolvedValue({
+      id: 'user-1',
+      email: 'field@example.com',
+      username: 'field.user',
+      role: UserRole.Field,
+      status: UserStatus.Active,
+      verified: false,
+      provider: 'local',
+      tokenVersion: 0,
+      authSecurity: {
+        emailVerificationOtpHash: otpHash,
+        emailVerificationOtpExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    redis.get.mockResolvedValue({
+      hash: otpHash,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    await expect(
+      service.verifyEmail({
+        email: 'field@example.com',
+        otp: '123456',
+      }),
+    ).resolves.toEqual({ verified: true });
+
+    expect(redis.del).toHaveBeenCalledWith('app:otp:email-verification:user-1');
+    expect(mongo.authSecurity.update).toHaveBeenCalledWith({
+      where: { authId: 'user-1' },
+      data: {
+        emailVerificationOtpHash: null,
+        emailVerificationOtpExpiresAt: null,
+      },
+    });
+    expect(emailQueue.sendWelcomeEmail).toHaveBeenCalledWith(
+      'field@example.com',
+      'field.user',
+      'user-1',
+    );
   });
 
   it('blocks login before email verification', async () => {
@@ -141,7 +192,9 @@ describe('AuthService', () => {
 
     const savedPassword = mongo.authUser.update.mock.calls[0][0].data.password;
     expect(savedPassword).not.toBe('NewPass123!');
-    await expect(bcrypt.compare('NewPass123!', savedPassword)).resolves.toBe(true);
+    await expect(bcrypt.compare('NewPass123!', savedPassword)).resolves.toBe(
+      true,
+    );
     expect(mongo.authUser.update.mock.calls[0][0].data.tokenVersion).toEqual({
       increment: 1,
     });

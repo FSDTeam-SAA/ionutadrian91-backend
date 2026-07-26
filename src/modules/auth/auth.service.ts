@@ -36,6 +36,13 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const VERIFY_EMAIL_OTP_TTL_MS = 24 * 60 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 
+type OtpKind = 'email-verification' | 'password-reset';
+
+interface OtpRecord {
+  hash: string;
+  expiresAt: string;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -64,19 +71,19 @@ export class AuthService {
     });
 
     const otp = this.generateOtp();
+    const otpRecord = await this.createOtpRecord(otp, VERIFY_EMAIL_OTP_TTL_MS);
     await this.mongo.authSecurity.create({
       data: {
         authId: user.id,
         failedAttempts: 0,
         mfaEnabled: false,
         lastPasswordChange: new Date(),
-        emailVerificationOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
-        emailVerificationOtpExpiresAt: new Date(
-          Date.now() + VERIFY_EMAIL_OTP_TTL_MS,
-        ),
+        emailVerificationOtpHash: otpRecord.hash,
+        emailVerificationOtpExpiresAt: new Date(otpRecord.expiresAt),
         emailVerificationOtpLastSentAt: new Date(),
       },
     });
+    await this.storeOtpInRedis(user.id, 'email-verification', otpRecord);
     await this.mongo.userProfile.create({
       data: {
         authId: user.id,
@@ -106,11 +113,14 @@ export class AuthService {
     }
 
     if (user.verified) {
+      await this.clearStoredOtp(user.id, 'email-verification');
       return { verified: true };
     }
 
     const security = user.authSecurity;
-    await this.assertValidOtp(
+    await this.assertValidOtpForUser(
+      user.id,
+      'email-verification',
       dto.otp,
       security?.emailVerificationOtpHash,
       security?.emailVerificationOtpExpiresAt,
@@ -120,13 +130,7 @@ export class AuthService {
       where: { id: user.id },
       data: { verified: true },
     });
-    await this.mongo.authSecurity.update({
-      where: { authId: user.id },
-      data: {
-        emailVerificationOtpHash: null,
-        emailVerificationOtpExpiresAt: null,
-      },
-    });
+    await this.clearStoredOtp(user.id, 'email-verification');
     await this.emailQueue.sendWelcomeEmail(user.email, user.username, user.id);
 
     return { verified: true };
@@ -202,18 +206,23 @@ export class AuthService {
         throw new BadRequestException('Email is already verified');
       }
 
-      await this.assertCanResend(user.authSecurity?.emailVerificationOtpLastSentAt);
+      await this.assertCanResend(
+        user.authSecurity?.emailVerificationOtpLastSentAt,
+      );
       const otp = this.generateOtp();
+      const otpRecord = await this.createOtpRecord(
+        otp,
+        VERIFY_EMAIL_OTP_TTL_MS,
+      );
       await this.mongo.authSecurity.update({
         where: { authId: user.id },
         data: {
-          emailVerificationOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
-          emailVerificationOtpExpiresAt: new Date(
-            Date.now() + VERIFY_EMAIL_OTP_TTL_MS,
-          ),
+          emailVerificationOtpHash: otpRecord.hash,
+          emailVerificationOtpExpiresAt: new Date(otpRecord.expiresAt),
           emailVerificationOtpLastSentAt: new Date(),
         },
       });
+      await this.storeOtpInRedis(user.id, 'email-verification', otpRecord);
       await this.recordEmail(user.id, user.email, 'verification');
       await this.emailQueue.sendVerificationEmail(
         user.email,
@@ -235,17 +244,26 @@ export class AuthService {
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ changed: true }> {
     const user = await this.findByEmail(dto.email);
-    if (!user || user.status !== UserStatus.Active || user.provider !== 'local') {
+    if (
+      !user ||
+      user.status !== UserStatus.Active ||
+      user.provider !== 'local'
+    ) {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    await this.assertValidOtp(
+    await this.assertValidOtpForUser(
+      user.id,
+      'password-reset',
       dto.otp,
       user.authSecurity?.passwordResetOtpHash,
       user.authSecurity?.passwordResetOtpExpiresAt,
     );
 
-    const passwordMatches = await bcrypt.compare(dto.newPassword, user.password);
+    const passwordMatches = await bcrypt.compare(
+      dto.newPassword,
+      user.password,
+    );
     if (passwordMatches) {
       throw new BadRequestException('New password must be different');
     }
@@ -258,13 +276,8 @@ export class AuthService {
         tokenVersion: { increment: 1 },
       },
     });
-    await this.mongo.authSecurity.update({
-      where: { authId: user.id },
-      data: {
-        passwordResetOtpHash: null,
-        passwordResetOtpExpiresAt: null,
-        lastPasswordChange: new Date(),
-      },
+    await this.clearStoredOtp(user.id, 'password-reset', {
+      lastPasswordChange: new Date(),
     });
     await this.cacheTokenVersion(user.id, updated.tokenVersion as number);
     await this.redis.deleteByPattern(
@@ -276,7 +289,10 @@ export class AuthService {
 
   async refresh(refreshToken: string): Promise<TokenPair> {
     try {
-      const payload = jwt.verify(refreshToken, this.refreshSecret) as AuthenticatedUser;
+      const payload = jwt.verify(
+        refreshToken,
+        this.refreshSecret,
+      ) as AuthenticatedUser;
       const cacheKey = this.refreshTokenKey(payload.userId, refreshToken);
       const cached = await this.redis.get<boolean>(cacheKey);
       if (!cached) {
@@ -309,7 +325,10 @@ export class AuthService {
     }
   }
 
-  async logout(userId: string, refreshToken?: string): Promise<{ loggedOut: true }> {
+  async logout(
+    userId: string,
+    refreshToken?: string,
+  ): Promise<{ loggedOut: true }> {
     if (refreshToken) {
       await this.redis.del(this.refreshTokenKey(userId, refreshToken));
     }
@@ -322,7 +341,9 @@ export class AuthService {
       data: { tokenVersion: { increment: 1 } },
     });
     await this.cacheTokenVersion(userId, user.tokenVersion as number);
-    await this.redis.deleteByPattern(`${config.redis_cache_key_prefix}:refresh:${userId}:*`);
+    await this.redis.deleteByPattern(
+      `${config.redis_cache_key_prefix}:refresh:${userId}:*`,
+    );
     return { loggedOut: true };
   }
 
@@ -342,7 +363,10 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    const passwordMatches = await bcrypt.compare(dto.currentPassword, user.password);
+    const passwordMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.password,
+    );
     if (!passwordMatches) {
       throw new UnauthorizedException('Current password is incorrect');
     }
@@ -359,7 +383,10 @@ export class AuthService {
       where: { authId: currentUser.userId },
       data: { lastPasswordChange: new Date() },
     });
-    await this.cacheTokenVersion(currentUser.userId, updated.tokenVersion as number);
+    await this.cacheTokenVersion(
+      currentUser.userId,
+      updated.tokenVersion as number,
+    );
     await this.redis.deleteByPattern(
       `${config.redis_cache_key_prefix}:refresh:${currentUser.userId}:*`,
     );
@@ -429,7 +456,9 @@ export class AuthService {
   }
 
   private async findUserWithProfile(userId: string) {
-    const user = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    const user = await this.mongo.authUser.findUnique({
+      where: { id: userId },
+    });
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
@@ -465,14 +494,16 @@ export class AuthService {
   private async issuePasswordResetOtp(user: any) {
     await this.assertCanResend(user.authSecurity?.passwordResetOtpLastSentAt);
     const otp = this.generateOtp();
+    const otpRecord = await this.createOtpRecord(otp, OTP_TTL_MS);
     await this.mongo.authSecurity.update({
       where: { authId: user.id },
       data: {
-        passwordResetOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
-        passwordResetOtpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
+        passwordResetOtpHash: otpRecord.hash,
+        passwordResetOtpExpiresAt: new Date(otpRecord.expiresAt),
         passwordResetOtpLastSentAt: new Date(),
       },
     });
+    await this.storeOtpInRedis(user.id, 'password-reset', otpRecord);
     await this.recordEmail(user.id, user.email, 'password_reset');
     await this.emailQueue.sendPasswordResetEmail(
       user.email,
@@ -482,12 +513,57 @@ export class AuthService {
     );
   }
 
+  async issueEmailVerificationOtp(
+    userId: string,
+    otp: string,
+  ): Promise<OtpRecord> {
+    const otpRecord = await this.createOtpRecord(otp, VERIFY_EMAIL_OTP_TTL_MS);
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        emailVerificationOtpHash: otpRecord.hash,
+        emailVerificationOtpExpiresAt: new Date(otpRecord.expiresAt),
+        emailVerificationOtpLastSentAt: new Date(),
+      },
+    });
+    await this.storeOtpInRedis(userId, 'email-verification', otpRecord);
+    return otpRecord;
+  }
+
+  private async assertValidOtpForUser(
+    userId: string,
+    kind: OtpKind,
+    otp: string,
+    fallbackHash?: string | null,
+    fallbackExpiresAt?: Date | string | null,
+  ) {
+    const redisOtp = await this.redis.get<OtpRecord>(this.otpKey(userId, kind));
+
+    if (redisOtp) {
+      await this.assertValidOtp(
+        otp,
+        redisOtp.hash,
+        redisOtp.expiresAt,
+        async () => {
+          await this.redis.del(this.otpKey(userId, kind));
+        },
+      );
+      return;
+    }
+
+    await this.assertValidOtp(otp, fallbackHash, fallbackExpiresAt);
+  }
+
   private async assertValidOtp(
     otp: string,
     otpHash?: string | null,
     expiresAt?: Date | string | null,
+    onExpired?: () => Promise<void>,
   ) {
     if (!otpHash || !expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      if (onExpired) {
+        await onExpired();
+      }
       throw new BadRequestException('Invalid or expired OTP');
     }
 
@@ -504,7 +580,9 @@ export class AuthService {
 
     const elapsed = Date.now() - new Date(lastSentAt).getTime();
     if (elapsed < OTP_RESEND_COOLDOWN_MS) {
-      throw new BadRequestException('Please wait before requesting another OTP');
+      throw new BadRequestException(
+        'Please wait before requesting another OTP',
+      );
     }
   }
 
@@ -526,6 +604,56 @@ export class AuthService {
 
   private generateOtp() {
     return randomInt(100000, 1000000).toString();
+  }
+
+  private async createOtpRecord(
+    otp: string,
+    ttlMs: number,
+  ): Promise<OtpRecord> {
+    return {
+      hash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
+      expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+    };
+  }
+
+  private async storeOtpInRedis(
+    userId: string,
+    kind: OtpKind,
+    record: OtpRecord,
+  ) {
+    const ttlSeconds = Math.max(
+      1,
+      Math.ceil((new Date(record.expiresAt).getTime() - Date.now()) / 1000),
+    );
+
+    await this.redis.set(this.otpKey(userId, kind), record, ttlSeconds);
+  }
+
+  private async clearStoredOtp(
+    userId: string,
+    kind: OtpKind,
+    extraMongoData: Record<string, unknown> = {},
+  ) {
+    await this.redis.del(this.otpKey(userId, kind));
+
+    const otpFields =
+      kind === 'email-verification'
+        ? {
+            emailVerificationOtpHash: null,
+            emailVerificationOtpExpiresAt: null,
+          }
+        : {
+            passwordResetOtpHash: null,
+            passwordResetOtpExpiresAt: null,
+          };
+
+    await this.mongo.authSecurity.update({
+      where: { authId: userId },
+      data: {
+        ...otpFields,
+        ...extraMongoData,
+      },
+    });
   }
 
   private async recordFailedLogin(userId: string) {
@@ -558,6 +686,10 @@ export class AuthService {
 
   private refreshTokenKey(userId: string, refreshToken: string) {
     return `${config.redis_cache_key_prefix}:refresh:${userId}:${refreshToken}`;
+  }
+
+  private otpKey(userId: string, kind: OtpKind) {
+    return `${config.redis_cache_key_prefix}:otp:${kind}:${userId}`;
   }
 
   private get refreshSecret() {

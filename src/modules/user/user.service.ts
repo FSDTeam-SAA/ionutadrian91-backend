@@ -17,8 +17,6 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
 const BCRYPT_ROUNDS = 12;
-const VERIFY_EMAIL_OTP_TTL_MS = 24 * 60 * 60 * 1000;
-
 @Injectable()
 export class UserService {
   constructor(
@@ -50,13 +48,9 @@ export class UserService {
         failedAttempts: 0,
         mfaEnabled: false,
         lastPasswordChange: new Date(),
-        emailVerificationOtpHash: await bcrypt.hash(otp, BCRYPT_ROUNDS),
-        emailVerificationOtpExpiresAt: new Date(
-          Date.now() + VERIFY_EMAIL_OTP_TTL_MS,
-        ),
-        emailVerificationOtpLastSentAt: new Date(),
       },
     });
+    await this.authService.issueEmailVerificationOtp(user.id, otp);
     await this.mongo.userProfile.create({
       data: {
         authId: user.id,
@@ -128,12 +122,17 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    if (existing.role === UserRole.Administrator && dto.status === UserStatus.Inactive) {
+    if (
+      existing.role === UserRole.Administrator &&
+      dto.status === UserStatus.Inactive
+    ) {
       const activeAdmins = await this.mongo.authUser.count({
         where: { role: UserRole.Administrator, status: UserStatus.Active },
       });
       if (activeAdmins <= 1) {
-        throw new BadRequestException('At least one active administrator is required');
+        throw new BadRequestException(
+          'At least one active administrator is required',
+        );
       }
     }
 
@@ -156,7 +155,10 @@ export class UserService {
     return this.findOne(id);
   }
 
-  async updateOwnProfile(id: string, dto: UpdateProfileDto): Promise<PublicUser> {
+  async updateOwnProfile(
+    id: string,
+    dto: UpdateProfileDto,
+  ): Promise<PublicUser> {
     await this.updateProfile(id, dto);
     return this.findOne(id);
   }
@@ -178,7 +180,9 @@ export class UserService {
   }
 
   private async updateProfile(id: string, dto: UpdateProfileDto) {
-    const profile = await this.mongo.userProfile.findFirst({ where: { authId: id } });
+    const profile = await this.mongo.userProfile.findFirst({
+      where: { authId: id },
+    });
     const data = {
       ...(dto.firstName !== undefined ? { firstName: dto.firstName } : {}),
       ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
