@@ -77,7 +77,9 @@ export class AuthGuard implements CanActivate {
       return;
     }
 
-    const platform = String(request.headers['x-client-platform'] || '').toLowerCase();
+    const platform = String(
+      request.headers['x-client-platform'] || '',
+    ).toLowerCase();
     if (platform !== ClientPlatform.Mobile) {
       throw new ForbiddenException('Field users can access mobile only');
     }
@@ -129,13 +131,5 @@ export class AuthGuard implements CanActivate {
 
     const [type, token] = authHeader.split(' ');
     return type === 'Bearer' ? token : undefined;
-  }
-
-  /**
-   * Extract token from cookies (alternative method)
-   */
-  private extractTokenFromCookies(request: Request): string | undefined {
-    const cookies = request.cookies as Record<string, string> | undefined;
-    return cookies?.accessToken;
   }
 }
