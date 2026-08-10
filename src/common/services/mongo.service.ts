@@ -16,6 +16,8 @@ import {
   LoginHistoryDocument,
   HrPlan,
   HrPlanDocument,
+  TeamMember,
+  TeamMemberDocument,
   UserProfile,
   UserProfileDocument,
 } from '../schemas';
@@ -66,6 +68,17 @@ export class MongoService {
     delete: (args: QueryArgs) => this.deleteOne(this.hrPlanModel, args),
   };
 
+  readonly teamMember = {
+    findFirst: (args: QueryArgs) => this.findOne(this.teamMemberModel, args),
+    findUnique: (args: QueryArgs) => this.findOne(this.teamMemberModel, args),
+    findMany: (args: QueryArgs = {}) =>
+      this.findMany(this.teamMemberModel, args),
+    count: (args: QueryArgs = {}) => this.count(this.teamMemberModel, args),
+    create: (args: QueryArgs) => this.create(this.teamMemberModel, args),
+    update: (args: QueryArgs) => this.updateOne(this.teamMemberModel, args),
+    delete: (args: QueryArgs) => this.deleteOne(this.teamMemberModel, args),
+  };
+
   readonly emailHistory = {
     create: (args: QueryArgs) => this.create(this.emailHistoryModel, args),
     updateMany: (args: QueryArgs) =>
@@ -99,6 +112,8 @@ export class MongoService {
     private readonly loginHistoryModel: Model<LoginHistoryDocument>,
     @InjectModel(HrPlan.name)
     private readonly hrPlanModel: Model<HrPlanDocument>,
+    @InjectModel(TeamMember.name)
+    private readonly teamMemberModel: Model<TeamMemberDocument>,
     @InjectModel(ActivityLogEvent.name)
     private readonly activityLogModel: Model<ActivityLogEventDocument>,
     @InjectModel(UserProfile.name)

@@ -17,6 +17,8 @@ import {
   LoginHistorySchema,
   HrPlan,
   HrPlanSchema,
+  TeamMember,
+  TeamMemberSchema,
   UserProfile,
   UserProfileSchema,
 } from '../schemas';
@@ -32,6 +34,7 @@ import {
       { name: EmailHistory.name, schema: EmailHistorySchema },
       { name: LoginHistory.name, schema: LoginHistorySchema },
       { name: HrPlan.name, schema: HrPlanSchema },
+      { name: TeamMember.name, schema: TeamMemberSchema },
       { name: ActivityLogEvent.name, schema: ActivityLogEventSchema },
       { name: UserProfile.name, schema: UserProfileSchema },
     ]),

@@ -11,6 +11,13 @@ import { CreatePlanDto } from './dto/create-plan.dto';
 import { ListPlansDto } from './dto/list-plans.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { CreateTeamMemberDto } from './dto/create-team-member.dto';
+import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
+
+export interface UploadedPhoto {
+  buffer: Buffer;
+  mimetype: string;
+}
 
 @Injectable()
 export class HrService {
@@ -54,6 +61,14 @@ export class HrService {
     if (planCount > 0) {
       throw new BadRequestException(
         'Cannot delete a department that has plans',
+      );
+    }
+    const memberCount = await this.mongo.teamMember.count({
+      where: { departmentId: id },
+    });
+    if (memberCount > 0) {
+      throw new BadRequestException(
+        'Cannot delete a department that has team members',
       );
     }
     await this.mongo.department.delete({ where: { id } });
@@ -111,6 +126,78 @@ export class HrService {
     return { deleted: true };
   }
 
+  async createTeamMember(dto: CreateTeamMemberDto, photo?: UploadedPhoto) {
+    await this.findDepartment(dto.departmentId);
+    await this.assertWorkEmailAvailable(dto.workEmail);
+    const { photo: _photo, ...data } = dto;
+    return this.mongo.teamMember.create({
+      data: {
+        ...data,
+        workEmail: dto.workEmail.toLowerCase(),
+        ...(photo
+          ? {
+              photoData: photo.buffer,
+              photoMimeType: photo.mimetype,
+              hasPhoto: true,
+            }
+          : {}),
+      },
+    });
+  }
+
+  async findAllTeamMembers() {
+    return this.mongo.teamMember.findMany({ orderBy: { fullName: 'asc' } });
+  }
+
+  async findTeamMember(id: string) {
+    const member = await this.mongo.teamMember.findUnique({ where: { id } });
+    if (!member) throw new NotFoundException('Team member not found');
+    return member;
+  }
+
+  async updateTeamMember(
+    id: string,
+    dto: UpdateTeamMemberDto,
+    photo?: UploadedPhoto,
+  ) {
+    await this.findTeamMember(id);
+    if (dto.departmentId) await this.findDepartment(dto.departmentId);
+    if (dto.workEmail) await this.assertWorkEmailAvailable(dto.workEmail, id);
+    const { photo: _photo, ...data } = dto;
+    return this.mongo.teamMember.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(dto.workEmail ? { workEmail: dto.workEmail.toLowerCase() } : {}),
+        ...(photo
+          ? {
+              photoData: photo.buffer,
+              photoMimeType: photo.mimetype,
+              hasPhoto: true,
+            }
+          : {}),
+      },
+    });
+  }
+
+  async removeTeamMember(id: string) {
+    await this.findTeamMember(id);
+    await this.mongo.teamMember.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  async findTeamMemberPhoto(id: string) {
+    const member = await this.mongo.teamMember.findUnique({
+      where: { id },
+      select: { photoData: true, photoMimeType: true },
+    });
+    if (!member) throw new NotFoundException('Team member not found');
+    if (!member.photoData || !member.photoMimeType) {
+      throw new NotFoundException('Team member photo not found');
+    }
+    return { data: member.photoData, mimeType: member.photoMimeType };
+  }
+
   private async assertUserExists(id: string) {
     const user = await this.mongo.authUser.findUnique({
       where: { id },
@@ -125,6 +212,15 @@ export class HrService {
     });
     if (existing && existing.id !== exceptId)
       throw new ConflictException('A department with this name already exists');
+  }
+
+  private async assertWorkEmailAvailable(email: string, exceptId?: string) {
+    const existing = await this.mongo.teamMember.findFirst({
+      where: { workEmail: email.toLowerCase() },
+    });
+    if (existing && existing.id !== exceptId) {
+      throw new ConflictException('A team member with this work email exists');
+    }
   }
 
   private assertPlanDates(startDate: Date, endDate: Date) {

@@ -7,10 +7,20 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  FileTypeValidator,
+  MaxFileSizeValidator,
+  ParseFilePipe,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
   ApiParam,
   ApiTags,
@@ -30,9 +40,12 @@ import { CreatePlanDto } from './dto/create-plan.dto';
 import { ListPlansDto } from './dto/list-plans.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { CreateTeamMemberDto } from './dto/create-team-member.dto';
+import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
 import { DepartmentEntity } from './entities/department.entity';
 import { PlanEntity } from './entities/plan.entity';
-import { HrService } from './hr.service';
+import { TeamMemberEntity } from './entities/team-member.entity';
+import { HrService, type UploadedPhoto } from './hr.service';
 
 @ApiTags('HR')
 @ApiBearerAuth()
@@ -85,6 +98,88 @@ export class HrController {
   @ApiResponseDecorator(200, 'Department deleted')
   removeDepartment(@Param('id') id: string) {
     return this.hrService.removeDepartment(id);
+  }
+
+  @Post('team-members')
+  @ApiOperation({ summary: 'Add a team member' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: CreateTeamMemberDto })
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiResponseDecorator(201, 'Team member created', TeamMemberEntity)
+  createTeamMember(
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: false,
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^(image\/png|image\/jpeg)$/ }),
+        ],
+      }),
+    )
+    photo: UploadedPhoto | undefined,
+    @Body() dto: CreateTeamMemberDto,
+  ) {
+    return this.hrService.createTeamMember(dto, photo);
+  }
+
+  @Get('team-members')
+  @ApiOperation({ summary: 'List team members' })
+  @ApiArrayResponseDecorator(200, 'Team members retrieved', TeamMemberEntity)
+  findAllTeamMembers() {
+    return this.hrService.findAllTeamMembers();
+  }
+
+  @Get('team-members/:id/photo')
+  @ApiOperation({ summary: 'Get a team member photo' })
+  @ApiParam({ name: 'id', description: 'Team member ID' })
+  getTeamMemberPhoto(@Param('id') id: string, @Res() response: Response) {
+    return this.hrService
+      .findTeamMemberPhoto(id)
+      .then((photo) => response.type(photo.mimeType).send(photo.data));
+  }
+
+  @Get('team-members/:id')
+  @ApiOperation({ summary: 'Get a team member' })
+  @ApiParam({ name: 'id', description: 'Team member ID' })
+  @ApiResponseDecorator(200, 'Team member retrieved', TeamMemberEntity)
+  findTeamMember(@Param('id') id: string) {
+    return this.hrService.findTeamMember(id);
+  }
+
+  @Patch('team-members/:id')
+  @ApiOperation({ summary: 'Update a team member' })
+  @ApiParam({ name: 'id', description: 'Team member ID' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: UpdateTeamMemberDto })
+  @UseInterceptors(
+    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiResponseDecorator(200, 'Team member updated', TeamMemberEntity)
+  updateTeamMember(
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        fileIsRequired: false,
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /^(image\/png|image\/jpeg)$/ }),
+        ],
+      }),
+    )
+    photo: UploadedPhoto | undefined,
+    @Body() dto: UpdateTeamMemberDto,
+  ) {
+    return this.hrService.updateTeamMember(id, dto, photo);
+  }
+
+  @Delete('team-members/:id')
+  @ApiOperation({ summary: 'Delete a team member' })
+  @ApiParam({ name: 'id', description: 'Team member ID' })
+  @ApiResponseDecorator(200, 'Team member deleted')
+  removeTeamMember(@Param('id') id: string) {
+    return this.hrService.removeTeamMember(id);
   }
 
   @Post('plans')
