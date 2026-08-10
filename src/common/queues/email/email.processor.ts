@@ -2,8 +2,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { EmailJob } from './email.queue';
-import { EmailService } from 'src/common/services/email.service';
-import { MongoService } from 'src/common/services/mongo.service';
+import { EmailService } from '../../services/email.service';
+import { MongoService } from '../../services/mongo.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
