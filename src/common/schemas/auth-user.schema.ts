@@ -7,6 +7,7 @@ export enum UserRole {
   Administrator = 'ADMINISTRATOR',
   Office = 'OFFICE',
   Field = 'FIELD',
+  HR = 'HR',
 }
 
 export enum UserStatus {

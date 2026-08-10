@@ -12,7 +12,8 @@ export function setupScalarDocs(app: INestApplication): void {
         '',
         'Core capabilities:',
         '- Email-first authentication: register, verify email, login, forgot password, verify OTP, resend OTP, change password, logout.',
-        '- Three-role access model: Administrator, Office, and Field.',
+        '- Four-role access model: Administrator, Office, Field, and HR.',
+        '- HR users can manage departments and department-level plans.',
         '- Field users are mobile-only and must send `x-client-platform: mobile` with authenticated requests.',
         '- MongoDB persistence, Redis-backed token/session cache, BullMQ email processing, and Redis rate limiting.',
       ].join('\n'),
@@ -48,6 +49,10 @@ export function setupScalarDocs(app: INestApplication): void {
     .addTag(
       'Users',
       'Administrator/Office user management and self-service profile endpoints.',
+    )
+    .addTag(
+      'HR',
+      'HR and administrator department management, planning, and plan tracking.',
     )
     .addTag('health', 'Runtime health checks.')
     .addTag('metrics', 'Operational metrics and monitoring endpoints.')

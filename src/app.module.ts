@@ -12,6 +12,7 @@ import { winstonConfig } from './common/config/winston.config';
 import { LoggerModule } from './common/modules/logger.module';
 import { MongoModule } from './common/modules/mongo.module';
 import { QueueModule } from './common/modules/queue.module';
+import { HrModule } from './modules/hr/hr.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { QueueModule } from './common/modules/queue.module';
     // Background email queue
     QueueModule,
     AuthModule,
+    HrModule,
     UserModule,
   ],
   controllers: [AppController],

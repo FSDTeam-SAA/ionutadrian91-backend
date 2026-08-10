@@ -57,14 +57,14 @@ export class UserController {
   }
 
   @Get()
-  @Roles(UserRole.Administrator, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR)
   @ApiArrayResponseDecorator(200, 'Users retrieved', UserEntity)
   findAll(@Query() query: ListUsersDto) {
     return this.userService.findAll(query);
   }
 
   @Get(':id')
-  @Roles(UserRole.Administrator, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR)
   @ApiResponseDecorator(200, 'User retrieved', UserEntity)
   findOne(@Param('id') id: string) {
     return this.userService.findOne(id);

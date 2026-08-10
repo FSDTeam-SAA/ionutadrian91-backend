@@ -9,10 +9,14 @@ import {
   AuthSecuritySchema,
   AuthUser,
   AuthUserSchema,
+  Department,
+  DepartmentSchema,
   EmailHistory,
   EmailHistorySchema,
   LoginHistory,
   LoginHistorySchema,
+  HrPlan,
+  HrPlanSchema,
   UserProfile,
   UserProfileSchema,
 } from '../schemas';
@@ -20,14 +24,14 @@ import {
 @Global()
 @Module({
   imports: [
-    MongooseModule.forRoot(
-      config.mongodb_uri,
-    ),
+    MongooseModule.forRoot(config.mongodb_uri),
     MongooseModule.forFeature([
       { name: AuthUser.name, schema: AuthUserSchema },
+      { name: Department.name, schema: DepartmentSchema },
       { name: AuthSecurity.name, schema: AuthSecuritySchema },
       { name: EmailHistory.name, schema: EmailHistorySchema },
       { name: LoginHistory.name, schema: LoginHistorySchema },
+      { name: HrPlan.name, schema: HrPlanSchema },
       { name: ActivityLogEvent.name, schema: ActivityLogEventSchema },
       { name: UserProfile.name, schema: UserProfileSchema },
     ]),

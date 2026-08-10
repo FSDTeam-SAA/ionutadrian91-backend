@@ -8,10 +8,14 @@ import {
   AuthSecurityDocument,
   AuthUser,
   AuthUserDocument,
+  Department,
+  DepartmentDocument,
   EmailHistory,
   EmailHistoryDocument,
   LoginHistory,
   LoginHistoryDocument,
+  HrPlan,
+  HrPlanDocument,
   UserProfile,
   UserProfileDocument,
 } from '../schemas';
@@ -41,6 +45,27 @@ export class MongoService {
     update: (args: QueryArgs) => this.updateOne(this.authSecurityModel, args),
   };
 
+  readonly department = {
+    findFirst: (args: QueryArgs) => this.findOne(this.departmentModel, args),
+    findUnique: (args: QueryArgs) => this.findOne(this.departmentModel, args),
+    findMany: (args: QueryArgs = {}) =>
+      this.findMany(this.departmentModel, args),
+    count: (args: QueryArgs = {}) => this.count(this.departmentModel, args),
+    create: (args: QueryArgs) => this.create(this.departmentModel, args),
+    update: (args: QueryArgs) => this.updateOne(this.departmentModel, args),
+    delete: (args: QueryArgs) => this.deleteOne(this.departmentModel, args),
+  };
+
+  readonly hrPlan = {
+    findFirst: (args: QueryArgs) => this.findOne(this.hrPlanModel, args),
+    findUnique: (args: QueryArgs) => this.findOne(this.hrPlanModel, args),
+    findMany: (args: QueryArgs = {}) => this.findMany(this.hrPlanModel, args),
+    count: (args: QueryArgs = {}) => this.count(this.hrPlanModel, args),
+    create: (args: QueryArgs) => this.create(this.hrPlanModel, args),
+    update: (args: QueryArgs) => this.updateOne(this.hrPlanModel, args),
+    delete: (args: QueryArgs) => this.deleteOne(this.hrPlanModel, args),
+  };
+
   readonly emailHistory = {
     create: (args: QueryArgs) => this.create(this.emailHistoryModel, args),
     updateMany: (args: QueryArgs) =>
@@ -66,17 +91,23 @@ export class MongoService {
     private readonly authUserModel: Model<AuthUserDocument>,
     @InjectModel(AuthSecurity.name)
     private readonly authSecurityModel: Model<AuthSecurityDocument>,
+    @InjectModel(Department.name)
+    private readonly departmentModel: Model<DepartmentDocument>,
     @InjectModel(EmailHistory.name)
     private readonly emailHistoryModel: Model<EmailHistoryDocument>,
     @InjectModel(LoginHistory.name)
     private readonly loginHistoryModel: Model<LoginHistoryDocument>,
+    @InjectModel(HrPlan.name)
+    private readonly hrPlanModel: Model<HrPlanDocument>,
     @InjectModel(ActivityLogEvent.name)
     private readonly activityLogModel: Model<ActivityLogEventDocument>,
     @InjectModel(UserProfile.name)
     private readonly userProfileModel: Model<UserProfileDocument>,
   ) {}
 
-  async $transaction<T>(callback: (tx: MongoService) => Promise<T>): Promise<T> {
+  async $transaction<T>(
+    callback: (tx: MongoService) => Promise<T>,
+  ): Promise<T> {
     return callback(this);
   }
 
@@ -97,7 +128,9 @@ export class MongoService {
   private async create<T>(model: Model<T>, args: QueryArgs) {
     const doc = await model.create(this.normalizeData(args.data || {}) as any);
     const serialized = this.serialize(doc);
-    return args.select ? this.pickSelected(serialized, args.select) : serialized;
+    return args.select
+      ? this.pickSelected(serialized, args.select)
+      : serialized;
   }
 
   private async findMany<T>(model: Model<T>, args: QueryArgs) {
@@ -144,11 +177,23 @@ export class MongoService {
 
   private async updateMany<T>(model: Model<T>, args: QueryArgs) {
     return model
-      .updateMany(this.toMongoFilter(args.where), this.toMongoUpdate(args.data || {}))
+      .updateMany(
+        this.toMongoFilter(args.where),
+        this.toMongoUpdate(args.data || {}),
+      )
       .exec();
   }
 
-  private toMongoFilter(where: Record<string, unknown> = {}): Record<string, unknown> {
+  private async deleteOne<T>(model: Model<T>, args: QueryArgs) {
+    const doc = await model
+      .findOneAndDelete(this.toMongoFilter(args.where))
+      .exec();
+    return this.serialize(doc);
+  }
+
+  private toMongoFilter(
+    where: Record<string, unknown> = {},
+  ): Record<string, unknown> {
     const filter: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(where)) {
@@ -164,8 +209,8 @@ export class MongoService {
         continue;
       }
 
-      if (key === 'authId') {
-        filter.authId = this.toObjectId(value);
+      if (['authId', 'headId', 'departmentId', 'createdById'].includes(key)) {
+        filter[key] = this.toObjectId(value);
         continue;
       }
 
@@ -175,16 +220,14 @@ export class MongoService {
     return filter;
   }
 
-  private toMongoUpdate(data: Record<string, unknown>): Record<string, unknown> {
+  private toMongoUpdate(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
     const $set: Record<string, unknown> = {};
     const $inc: Record<string, number> = {};
 
     for (const [key, value] of Object.entries(data)) {
-      if (
-        typeof value === 'object' &&
-        value !== null &&
-        'increment' in value
-      ) {
+      if (typeof value === 'object' && value !== null && 'increment' in value) {
         $inc[key] = Number((value as { increment: number }).increment);
       } else {
         $set[key] = this.normalizeValue(key, value);
@@ -207,7 +250,7 @@ export class MongoService {
   }
 
   private normalizeValue(key: string, value: unknown) {
-    if (key === 'authId') {
+    if (['authId', 'headId', 'departmentId', 'createdById'].includes(key)) {
       return this.toObjectId(value);
     }
 
