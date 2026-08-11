@@ -29,6 +29,14 @@ async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
   const enableDocs = process.env.ENABLE_API_DOCS !== 'false'; // Default to true
 
+  // Local clients may run from any development origin.
+  if (!isProduction) {
+    app.enableCors({
+      origin: '*',
+      credentials: true,
+    });
+  }
+
   // Security middleware - helmet helps secure Express apps by setting HTTP response headers.
   // Scalar API Reference needs inline script/style permissions for its browser UI.
   const helmetConfig =
@@ -37,7 +45,11 @@ async function bootstrap() {
           contentSecurityPolicy: {
             directives: {
               defaultSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+              styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://cdn.jsdelivr.net',
+              ],
               imgSrc: ["'self'", 'data:', 'https:'],
               scriptSrc: [
                 "'self'",
@@ -64,7 +76,11 @@ async function bootstrap() {
           contentSecurityPolicy: {
             directives: {
               defaultSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+              styleSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                'https://cdn.jsdelivr.net',
+              ],
               imgSrc: ["'self'", 'data:', 'https:'],
               scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
             },
