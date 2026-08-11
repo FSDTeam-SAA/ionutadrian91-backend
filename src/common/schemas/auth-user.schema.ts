@@ -6,7 +6,7 @@ export type AuthUserDocument = HydratedDocument<AuthUser>;
 export enum UserRole {
   Administrator = 'ADMINISTRATOR',
   Office = 'OFFICE',
-  Field = 'FIELD',
+  User = 'USER',
   HR = 'HR',
 }
 
@@ -30,7 +30,7 @@ export class AuthUser {
   @Prop({
     required: true,
     enum: Object.values(UserRole),
-    default: UserRole.Field,
+    default: UserRole.User,
   })
   role: UserRole;
 

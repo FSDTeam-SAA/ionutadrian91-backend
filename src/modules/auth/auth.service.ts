@@ -69,7 +69,7 @@ export class AuthService {
         email: dto.email.toLowerCase(),
         username: dto.username,
         password,
-        role: UserRole.Field,
+        role: UserRole.User,
         status: UserStatus.Active,
         verified: false,
         provider: 'local',
@@ -461,9 +461,7 @@ export class AuthService {
   }
 
   assertRoleCanUsePlatform(role: UserRole, platform: ClientPlatform) {
-    if (role === UserRole.Field && platform !== ClientPlatform.Mobile) {
-      throw new ForbiddenException('Field users can access mobile only');
-    }
+    // Restrictions removed as requested
   }
 
   private async assertUniqueIdentity(email: string, username: string) {

@@ -12,10 +12,10 @@ export function setupScalarDocs(app: INestApplication): void {
         '',
         'Core capabilities:',
         '- Email-first authentication: register, verify email, login, forgot password, verify OTP, resend OTP, change password, logout.',
-        '- Four-role access model: Administrator, Office, Field, and HR.',
+        '- Four-role access model: Administrator, Office, User, and HR.',
         '- HR users can directly create, view, update, and delete departments and manage department-level plans; department changes do not require administrator approval.',
         '- Team-member profile photos are uploaded to Cloudinary and returned as secure URLs.',
-        '- Field users are mobile-only and must send `x-client-platform: mobile` with authenticated requests.',
+
         '- MongoDB persistence, Redis-backed token/session cache, BullMQ email processing, and Redis rate limiting.',
       ].join('\n'),
     )

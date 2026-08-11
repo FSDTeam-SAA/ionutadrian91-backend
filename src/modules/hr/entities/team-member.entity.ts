@@ -20,7 +20,7 @@ export class TeamMemberEntity {
   @ApiProperty() endTime: string;
   @ApiProperty() shiftName: string;
   @ApiProperty({ type: [String], example: ['SA', 'SU'] }) weekendDays: string[];
-  @ApiProperty() portalPermission: string;
+
   @ApiProperty() workEmail: string;
   @ApiProperty() phoneNumber: string;
   @ApiPropertyOptional() homeAddress?: string | null;

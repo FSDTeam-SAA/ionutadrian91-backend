@@ -121,7 +121,6 @@ describe('HrService department management', () => {
         endTime: '18:00',
         shiftName: 'Day shift',
         weekendDays: ['SA', 'SU'],
-        portalPermission: 'Engineer',
         workEmail: 'JANE.STEWART@example.com',
         phoneNumber: '+44 7000 000 000',
         emergencyContactName: 'John Stewart',

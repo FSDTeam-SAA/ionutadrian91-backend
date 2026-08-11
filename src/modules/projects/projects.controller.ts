@@ -33,7 +33,7 @@ export class ProjectsController {
   }
 
   @Get()
-  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR, UserRole.Field)
+  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR, UserRole.User)
   @ApiOperation({ summary: 'Get all projects with filters' })
   @ApiQuery({ name: 'name', required: false })
   @ApiQuery({ name: 'startDate', required: false, description: 'Created At Start Date' })
@@ -47,7 +47,7 @@ export class ProjectsController {
   }
 
   @Get(':id')
-  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR, UserRole.Field)
+  @Roles(UserRole.Administrator, UserRole.Office, UserRole.HR, UserRole.User)
   @ApiOperation({ summary: 'Get a project by ID' })
   findOne(@Param('id') id: string) {
     return this.projectsService.findOne(id);

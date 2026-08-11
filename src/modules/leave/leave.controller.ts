@@ -43,13 +43,13 @@ export class LeaveController {
     @Body() dto: ApplyLeaveDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.leaveService.applyLeave(req.user.email, dto, file);
+    return this.leaveService.applyLeave(req.user.userId, dto, file);
   }
 
   @Get('my-history')
   @ApiOperation({ summary: 'View my leave balance and history (Employee)' })
   async getMyHistory(@Request() req: any) {
-    return this.leaveService.getMyHistory(req.user.email);
+    return this.leaveService.getMyHistory(req.user.userId);
   }
 
   @Get('dashboard')

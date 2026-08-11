@@ -27,7 +27,7 @@ export class RegisterDto {
   @MaxLength(128)
   password: string;
 
-  @ApiPropertyOptional({ example: 'Field' })
+  @ApiPropertyOptional({ example: 'Smith' })
   @IsOptional()
   @IsString()
   @MaxLength(80)
