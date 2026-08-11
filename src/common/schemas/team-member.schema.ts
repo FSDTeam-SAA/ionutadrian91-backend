@@ -3,6 +3,29 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type TeamMemberDocument = HydratedDocument<TeamMember>;
 
+export class DocumentItem {
+  @Prop({ required: true })
+  name: string;
+
+  @Prop({ required: true })
+  category: string;
+
+  @Prop({ required: true })
+  uploadDate: string;
+
+  @Prop({ type: String, default: null })
+  expiryDate?: string | null;
+
+  @Prop({ required: true })
+  status: string;
+
+  @Prop({ required: true })
+  url: string;
+
+  @Prop({ required: true })
+  publicId: string;
+}
+
 @Schema({ timestamps: true, collection: 'team_members' })
 export class TeamMember {
   @Prop({ required: true, trim: true })
@@ -58,6 +81,15 @@ export class TeamMember {
 
   @Prop({ required: true, default: false })
   hasPhoto: boolean;
+
+  @Prop({ type: Boolean, default: false })
+  isCompleted: boolean;
+
+  @Prop({ type: [Object], default: [] })
+  documents: DocumentItem[];
+
+  @Prop({ type: Number, default: 0 })
+  leaveBalance: number;
 }
 
 export const TeamMemberSchema = SchemaFactory.createForClass(TeamMember);

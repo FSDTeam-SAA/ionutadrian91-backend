@@ -32,6 +32,28 @@ export class CloudinaryService {
     return { publicId: result.public_id, url: result.secure_url };
   }
 
+  async uploadDocument(
+    buffer: Buffer,
+    mimeType: string,
+    originalName: string,
+  ): Promise<{ publicId: string; url: string; originalName: string }> {
+    this.assertConfigured();
+    const result = await cloudinary.uploader.upload(
+      `data:${mimeType};base64,${buffer.toString('base64')}`,
+      {
+        folder: 'ionutadrian91/team-members/documents',
+        resource_type: 'auto',
+      },
+    );
+    return { publicId: result.public_id, url: result.secure_url, originalName };
+  }
+
+  async removeDocument(publicId?: string | null): Promise<void> {
+    if (!publicId) return;
+    this.assertConfigured();
+    await cloudinary.uploader.destroy(publicId, { resource_type: 'auto' });
+  }
+
   async removePhoto(publicId?: string | null): Promise<void> {
     if (!publicId) return;
     this.assertConfigured();

@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class DocumentItemEntity {
+  @ApiProperty() name: string;
+  @ApiProperty() category: string;
+  @ApiProperty() uploadDate: string;
+  @ApiPropertyOptional() expiryDate?: string | null;
+  @ApiProperty() status: string;
+  @ApiProperty() url: string;
+}
+
 export class TeamMemberEntity {
   @ApiProperty() id: string;
   @ApiProperty() fullName: string;
@@ -23,6 +32,8 @@ export class TeamMemberEntity {
     description: 'Secure Cloudinary URL for the team-member profile photo.',
   })
   photoUrl?: string | null;
+  @ApiProperty({ type: [DocumentItemEntity] }) documents: DocumentItemEntity[];
+  @ApiProperty() isCompleted: boolean;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 }

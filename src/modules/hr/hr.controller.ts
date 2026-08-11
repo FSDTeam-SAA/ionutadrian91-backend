@@ -11,11 +11,12 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   FileTypeValidator,
   MaxFileSizeValidator,
   ParseFilePipe,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -184,34 +185,30 @@ export class HrController {
   @ApiOperation({
     summary: 'Update a team member',
     description:
-      'Updates any supplied team-member fields directly. Submit `multipart/form-data`; including a `photo` replaces the existing Cloudinary image.',
+      'Updates any supplied team-member fields directly. Submit `multipart/form-data`; including a `photo` replaces the existing Cloudinary image. Include `documents` to upload new document files.',
   })
   @ApiParam({ name: 'id', description: 'Team member ID' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     type: UpdateTeamMemberDto,
     description:
-      'All fields are optional. `photo` accepts a PNG or JPEG up to 5 MB; `weekendDays` accepts JSON, comma-separated, or repeated multipart values.',
+      'All fields are optional. `photo` accepts a PNG/JPEG up to 5 MB. `documents` accepts multiple files up to 25 MB each.',
   })
   @UseInterceptors(
-    FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
+    FileFieldsInterceptor([
+      { name: 'photo', maxCount: 1 },
+      { name: 'documents', maxCount: 10 },
+    ]),
   )
   @ApiResponseDecorator(200, 'Team member updated', TeamMemberEntity)
   updateTeamMember(
     @Param('id') id: string,
-    @UploadedFile(
-      new ParseFilePipe({
-        fileIsRequired: false,
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
-          new FileTypeValidator({ fileType: /^(image\/png|image\/jpeg)$/ }),
-        ],
-      }),
-    )
-    photo: UploadedPhoto | undefined,
+    @UploadedFiles() files: { photo?: UploadedPhoto[]; documents?: UploadedPhoto[] },
     @Body() dto: UpdateTeamMemberDto,
   ) {
-    return this.hrService.updateTeamMember(id, dto, photo);
+    const photo = files?.photo?.[0];
+    const documents = files?.documents;
+    return this.hrService.updateTeamMember(id, dto, photo, documents);
   }
 
   @Delete('team-members/:id')

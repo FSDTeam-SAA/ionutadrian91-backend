@@ -18,6 +18,7 @@ import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
 export interface UploadedPhoto {
   buffer: Buffer;
   mimetype: string;
+  originalname?: string;
 }
 
 @Injectable()
@@ -181,25 +182,51 @@ export class HrService {
     id: string,
     dto: UpdateTeamMemberDto,
     photo?: UploadedPhoto,
+    documents?: UploadedPhoto[],
   ) {
-    await this.findTeamMember(id);
+    const existingMember = await this.findTeamMember(id);
     if (dto.departmentId) await this.findDepartment(dto.departmentId);
     if (dto.workEmail) await this.assertWorkEmailAvailable(dto.workEmail, id);
     const { photo: _photo, ...data } = dto;
+    
     const existingPhoto = photo
       ? await this.mongo.teamMember.findUnique({
           where: { id },
           select: { photoPublicId: true },
         })
       : null;
+      
     const uploadedPhoto = photo
       ? await this.cloudinary.uploadTeamMemberPhoto(
           photo.buffer,
           photo.mimetype,
         )
       : undefined;
+
+    const uploadedDocuments: any[] = [];
+    if (documents && documents.length > 0) {
+      for (const doc of documents) {
+        const result = await this.cloudinary.uploadDocument(
+          doc.buffer,
+          doc.mimetype,
+          doc.originalname || 'Document',
+        );
+        uploadedDocuments.push({
+          name: result.originalName,
+          category: 'General',
+          uploadDate: new Date().toISOString(),
+          status: 'Verified',
+          url: result.url,
+          publicId: result.publicId,
+        });
+      }
+    }
+
     let updated;
     try {
+      const existingDocs = (existingMember as any).documents || [];
+      const newDocs = [...existingDocs, ...uploadedDocuments];
+
       updated = await this.mongo.teamMember.update({
         where: { id },
         data: {
@@ -212,10 +239,14 @@ export class HrService {
                 hasPhoto: true,
               }
             : {}),
+          ...(documents && documents.length > 0 ? { documents: newDocs } : {}),
         },
       });
     } catch (error) {
       await this.cloudinary.removePhoto(uploadedPhoto?.publicId);
+      for (const doc of uploadedDocuments) {
+        await this.cloudinary.removeDocument(doc.publicId);
+      }
       throw error;
     }
     if (uploadedPhoto)

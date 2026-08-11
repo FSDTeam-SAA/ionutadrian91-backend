@@ -6,6 +6,7 @@ import {
   IsEmail,
   IsIn,
   IsMongoId,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
@@ -125,4 +126,10 @@ export class CreateTeamMemberDto {
   @IsString()
   @MaxLength(40)
   emergencyContactPhoneNumber: string;
+
+  @ApiPropertyOptional({ example: 10, description: 'Leave balance for the team member' })
+  @IsOptional()
+  @Transform(({ value }) => Number(value))
+  @IsNumber()
+  leaveBalance?: number;
 }
