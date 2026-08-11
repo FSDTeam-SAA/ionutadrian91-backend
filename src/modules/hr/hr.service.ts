@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { MongoService } from '../../common/services/mongo.service';
+import { CloudinaryService } from '../../common/services/cloudinary.service';
 import { HrPlanStatus } from '../../common/schemas';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { CreatePlanDto } from './dto/create-plan.dto';
@@ -21,7 +22,10 @@ export interface UploadedPhoto {
 
 @Injectable()
 export class HrService {
-  constructor(private readonly mongo: MongoService) {}
+  constructor(
+    private readonly mongo: MongoService,
+    private readonly cloudinary: CloudinaryService,
+  ) {}
 
   async createDepartment(dto: CreateDepartmentDto) {
     const name = dto.name.trim();
@@ -137,19 +141,30 @@ export class HrService {
     await this.findDepartment(dto.departmentId);
     await this.assertWorkEmailAvailable(dto.workEmail);
     const { photo: _photo, ...data } = dto;
-    return this.mongo.teamMember.create({
-      data: {
-        ...data,
-        workEmail: dto.workEmail.toLowerCase(),
-        ...(photo
-          ? {
-              photoData: photo.buffer,
-              photoMimeType: photo.mimetype,
-              hasPhoto: true,
-            }
-          : {}),
-      },
-    });
+    const uploadedPhoto = photo
+      ? await this.cloudinary.uploadTeamMemberPhoto(
+          photo.buffer,
+          photo.mimetype,
+        )
+      : undefined;
+    try {
+      return await this.mongo.teamMember.create({
+        data: {
+          ...data,
+          workEmail: dto.workEmail.toLowerCase(),
+          ...(uploadedPhoto
+            ? {
+                photoUrl: uploadedPhoto.url,
+                photoPublicId: uploadedPhoto.publicId,
+                hasPhoto: true,
+              }
+            : {}),
+        },
+      });
+    } catch (error) {
+      await this.cloudinary.removePhoto(uploadedPhoto?.publicId);
+      throw error;
+    }
   }
 
   async findAllTeamMembers() {
@@ -171,38 +186,64 @@ export class HrService {
     if (dto.departmentId) await this.findDepartment(dto.departmentId);
     if (dto.workEmail) await this.assertWorkEmailAvailable(dto.workEmail, id);
     const { photo: _photo, ...data } = dto;
-    return this.mongo.teamMember.update({
-      where: { id },
-      data: {
-        ...data,
-        ...(dto.workEmail ? { workEmail: dto.workEmail.toLowerCase() } : {}),
-        ...(photo
-          ? {
-              photoData: photo.buffer,
-              photoMimeType: photo.mimetype,
-              hasPhoto: true,
-            }
-          : {}),
-      },
-    });
+    const existingPhoto = photo
+      ? await this.mongo.teamMember.findUnique({
+          where: { id },
+          select: { photoPublicId: true },
+        })
+      : null;
+    const uploadedPhoto = photo
+      ? await this.cloudinary.uploadTeamMemberPhoto(
+          photo.buffer,
+          photo.mimetype,
+        )
+      : undefined;
+    let updated;
+    try {
+      updated = await this.mongo.teamMember.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(dto.workEmail ? { workEmail: dto.workEmail.toLowerCase() } : {}),
+          ...(uploadedPhoto
+            ? {
+                photoUrl: uploadedPhoto.url,
+                photoPublicId: uploadedPhoto.publicId,
+                hasPhoto: true,
+              }
+            : {}),
+        },
+      });
+    } catch (error) {
+      await this.cloudinary.removePhoto(uploadedPhoto?.publicId);
+      throw error;
+    }
+    if (uploadedPhoto)
+      await this.cloudinary.removePhoto(existingPhoto?.photoPublicId);
+    return updated;
   }
 
   async removeTeamMember(id: string) {
     await this.findTeamMember(id);
+    const photo = await this.mongo.teamMember.findUnique({
+      where: { id },
+      select: { photoPublicId: true },
+    });
     await this.mongo.teamMember.delete({ where: { id } });
+    await this.cloudinary.removePhoto(photo?.photoPublicId);
     return { deleted: true };
   }
 
   async findTeamMemberPhoto(id: string) {
     const member = await this.mongo.teamMember.findUnique({
       where: { id },
-      select: { photoData: true, photoMimeType: true },
+      select: { photoUrl: true },
     });
     if (!member) throw new NotFoundException('Team member not found');
-    if (!member.photoData || !member.photoMimeType) {
+    if (!member.photoUrl) {
       throw new NotFoundException('Team member photo not found');
     }
-    return { data: member.photoData, mimeType: member.photoMimeType };
+    return member.photoUrl;
   }
 
   private async assertDepartmentNameAvailable(name: string, exceptId?: string) {

@@ -18,6 +18,11 @@ export class TeamMemberEntity {
   @ApiProperty() emergencyContactName: string;
   @ApiProperty() emergencyContactPhoneNumber: string;
   @ApiProperty() hasPhoto: boolean;
+  @ApiPropertyOptional({
+    format: 'uri',
+    description: 'Secure Cloudinary URL for the team-member profile photo.',
+  })
+  photoUrl?: string | null;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 }

@@ -50,11 +50,11 @@ export class TeamMember {
   @Prop({ required: true, trim: true })
   emergencyContactPhoneNumber: string;
 
-  @Prop({ type: Buffer, select: false, default: null })
-  photoData?: Buffer | null;
+  @Prop({ type: String, default: null })
+  photoUrl?: string | null;
 
   @Prop({ type: String, select: false, default: null })
-  photoMimeType?: string | null;
+  photoPublicId?: string | null;
 
   @Prop({ required: true, default: false })
   hasPhoto: boolean;

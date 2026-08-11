@@ -23,6 +23,7 @@ import {
   ApiConsumes,
   ApiOperation,
   ApiParam,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import {
@@ -106,9 +107,17 @@ export class HrController {
   }
 
   @Post('team-members')
-  @ApiOperation({ summary: 'Add a team member' })
+  @ApiOperation({
+    summary: 'Create a team member',
+    description:
+      'HR and administrators can create team members directly. Submit `multipart/form-data`; `photo` is optional and must be a PNG or JPEG no larger than 5 MB. Uploaded photos are stored in Cloudinary.',
+  })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: CreateTeamMemberDto })
+  @ApiBody({
+    type: CreateTeamMemberDto,
+    description:
+      'Use `weekendDays` as a JSON array such as `["SA","SU"]`, comma-separated values, or repeated multipart fields.',
+  })
   @UseInterceptors(
     FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
   )
@@ -130,23 +139,41 @@ export class HrController {
   }
 
   @Get('team-members')
-  @ApiOperation({ summary: 'List team members' })
+  @ApiOperation({
+    summary: 'List team members',
+    description:
+      'Returns all team members alphabetically, including Cloudinary photo URLs when available.',
+  })
   @ApiArrayResponseDecorator(200, 'Team members retrieved', TeamMemberEntity)
   findAllTeamMembers() {
     return this.hrService.findAllTeamMembers();
   }
 
   @Get('team-members/:id/photo')
-  @ApiOperation({ summary: 'Get a team member photo' })
+  @ApiOperation({
+    summary: 'Redirect to a team member photo on Cloudinary',
+    description:
+      'Returns a 302 redirect to the member’s secure Cloudinary profile-photo URL.',
+  })
   @ApiParam({ name: 'id', description: 'Team member ID' })
+  @ApiResponse({
+    status: 302,
+    description: 'Redirect to the Cloudinary image URL.',
+    headers: {
+      Location: {
+        description: 'Cloudinary profile-photo URL.',
+        schema: { type: 'string', format: 'uri' },
+      },
+    },
+  })
   getTeamMemberPhoto(@Param('id') id: string, @Res() response: Response) {
     return this.hrService
       .findTeamMemberPhoto(id)
-      .then((photo) => response.type(photo.mimeType).send(photo.data));
+      .then((photoUrl) => response.redirect(photoUrl));
   }
 
   @Get('team-members/:id')
-  @ApiOperation({ summary: 'Get a team member' })
+  @ApiOperation({ summary: 'Get a team member by ID' })
   @ApiParam({ name: 'id', description: 'Team member ID' })
   @ApiResponseDecorator(200, 'Team member retrieved', TeamMemberEntity)
   findTeamMember(@Param('id') id: string) {
@@ -154,10 +181,18 @@ export class HrController {
   }
 
   @Patch('team-members/:id')
-  @ApiOperation({ summary: 'Update a team member' })
+  @ApiOperation({
+    summary: 'Update a team member',
+    description:
+      'Updates any supplied team-member fields directly. Submit `multipart/form-data`; including a `photo` replaces the existing Cloudinary image.',
+  })
   @ApiParam({ name: 'id', description: 'Team member ID' })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: UpdateTeamMemberDto })
+  @ApiBody({
+    type: UpdateTeamMemberDto,
+    description:
+      'All fields are optional. `photo` accepts a PNG or JPEG up to 5 MB; `weekendDays` accepts JSON, comma-separated, or repeated multipart values.',
+  })
   @UseInterceptors(
     FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }),
   )
@@ -180,7 +215,11 @@ export class HrController {
   }
 
   @Delete('team-members/:id')
-  @ApiOperation({ summary: 'Delete a team member' })
+  @ApiOperation({
+    summary: 'Delete a team member',
+    description:
+      'Deletes the team member directly and removes the associated Cloudinary photo when one exists.',
+  })
   @ApiParam({ name: 'id', description: 'Team member ID' })
   @ApiResponseDecorator(200, 'Team member deleted')
   removeTeamMember(@Param('id') id: string) {
