@@ -87,6 +87,9 @@ export class TeamMember {
 
   @Prop({ type: [Object], default: [] })
   documents: DocumentItem[];
+
+  @Prop({ type: Number, default: 0 })
+  leaveBalance: number;
 }
 
 export const TeamMemberSchema = SchemaFactory.createForClass(TeamMember);
