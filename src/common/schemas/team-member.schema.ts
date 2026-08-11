@@ -26,10 +26,23 @@ export class DocumentItem {
   publicId: string;
 }
 
+export enum EmployeeCategory {
+  ENGINEER = 'ENGINEER',
+  WORKER = 'WORKER',
+  OTHER = 'OTHER',
+}
+
 @Schema({ timestamps: true, collection: 'team_members' })
 export class TeamMember {
   @Prop({ required: true, trim: true })
   fullName: string;
+
+  @Prop({
+    required: true,
+    enum: Object.values(EmployeeCategory),
+    default: EmployeeCategory.OTHER,
+  })
+  employeeCategory: EmployeeCategory;
 
   @Prop({ required: true, trim: true })
   jobTitle: string;

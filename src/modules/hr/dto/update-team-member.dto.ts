@@ -1,4 +1,4 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType } from '@nestjs/swagger';
 import { CreateTeamMemberDto } from './create-team-member.dto';
 import { IsBoolean, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';

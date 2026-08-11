@@ -21,6 +21,16 @@ import {
   TeamMemberSchema,
   UserProfile,
   UserProfileSchema,
+  LeaveRequest,
+  LeaveRequestSchema,
+  Project,
+  ProjectSchema,
+  Whereabouts,
+  WhereaboutsSchema,
+  DutyOfCare,
+  DutyOfCareSchema,
+  IncidentReport,
+  IncidentReportSchema,
 } from '../schemas';
 
 @Global()
@@ -37,6 +47,11 @@ import {
       { name: TeamMember.name, schema: TeamMemberSchema },
       { name: ActivityLogEvent.name, schema: ActivityLogEventSchema },
       { name: UserProfile.name, schema: UserProfileSchema },
+      { name: LeaveRequest.name, schema: LeaveRequestSchema },
+      { name: Project.name, schema: ProjectSchema },
+      { name: Whereabouts.name, schema: WhereaboutsSchema },
+      { name: DutyOfCare.name, schema: DutyOfCareSchema },
+      { name: IncidentReport.name, schema: IncidentReportSchema },
     ]),
   ],
   providers: [MongoService],

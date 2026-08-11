@@ -20,6 +20,16 @@ import {
   TeamMemberDocument,
   UserProfile,
   UserProfileDocument,
+  LeaveRequest,
+  LeaveRequestDocument,
+  Project,
+  ProjectDocument,
+  Whereabouts,
+  WhereaboutsDocument,
+  DutyOfCare,
+  DutyOfCareDocument,
+  IncidentReport,
+  IncidentReportDocument,
 } from '../schemas';
 
 type QueryArgs = {
@@ -113,11 +123,21 @@ export class MongoService {
     @InjectModel(HrPlan.name)
     private readonly hrPlanModel: Model<HrPlanDocument>,
     @InjectModel(TeamMember.name)
-    private readonly teamMemberModel: Model<TeamMemberDocument>,
+    public readonly teamMemberModel: Model<TeamMemberDocument>,
     @InjectModel(ActivityLogEvent.name)
     private readonly activityLogModel: Model<ActivityLogEventDocument>,
     @InjectModel(UserProfile.name)
     private readonly userProfileModel: Model<UserProfileDocument>,
+    @InjectModel(LeaveRequest.name)
+    public readonly leaveRequest: Model<LeaveRequestDocument>,
+    @InjectModel(Project.name)
+    public readonly project: Model<ProjectDocument>,
+    @InjectModel(Whereabouts.name)
+    public readonly whereabouts: Model<WhereaboutsDocument>,
+    @InjectModel(DutyOfCare.name)
+    public readonly dutyOfCare: Model<DutyOfCareDocument>,
+    @InjectModel(IncidentReport.name)
+    public readonly incidentReport: Model<IncidentReportDocument>,
   ) {}
 
   async $transaction<T>(

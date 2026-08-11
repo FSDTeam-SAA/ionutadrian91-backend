@@ -4,8 +4,10 @@ import {
   IsArray,
   IsDate,
   IsEmail,
+  IsEnum,
   IsIn,
   IsMongoId,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -13,6 +15,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { EmployeeCategory } from '../../../common/schemas';
 
 const WEEK_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const;
 
@@ -36,6 +39,11 @@ export class CreateTeamMemberDto {
   @IsString()
   @MaxLength(120)
   jobTitle: string;
+
+  @ApiProperty({ enum: EmployeeCategory, example: EmployeeCategory.ENGINEER })
+  @IsEnum(EmployeeCategory)
+  @IsNotEmpty()
+  employeeCategory: EmployeeCategory;
 
   @ApiProperty({ description: 'Department ID' })
   @IsMongoId()

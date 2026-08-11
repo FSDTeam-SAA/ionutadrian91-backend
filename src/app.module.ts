@@ -13,6 +13,11 @@ import { LoggerModule } from './common/modules/logger.module';
 import { MongoModule } from './common/modules/mongo.module';
 import { QueueModule } from './common/modules/queue.module';
 import { HrModule } from './modules/hr/hr.module';
+import { LeaveModule } from './modules/leave/leave.module';
+import { ProjectsModule } from './modules/projects/projects.module';
+import { WhereaboutsModule } from './modules/whereabouts/whereabouts.module';
+import { DutyOfCareModule } from './modules/duty-of-care/duty-of-care.module';
+import { IncidentsModule } from './modules/incidents/incidents.module';
 
 @Module({
   imports: [
@@ -38,6 +43,11 @@ import { HrModule } from './modules/hr/hr.module';
     AuthModule,
     HrModule,
     UserModule,
+    LeaveModule,
+    ProjectsModule,
+    WhereaboutsModule,
+    DutyOfCareModule,
+    IncidentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

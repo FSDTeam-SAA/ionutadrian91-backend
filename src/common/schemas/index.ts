@@ -7,3 +7,8 @@ export * from './hr-plan.schema';
 export * from './login-history.schema';
 export * from './team-member.schema';
 export * from './user-profile.schema';
+export * from './leave-request.schema';
+export * from './project.schema';
+export * from './whereabouts.schema';
+export * from './duty-of-care.schema';
+export * from './incident-report.schema';

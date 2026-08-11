@@ -48,6 +48,21 @@ export class CloudinaryService {
     return { publicId: result.public_id, url: result.secure_url, originalName };
   }
 
+  async uploadIncidentPhoto(
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<{ publicId: string; url: string }> {
+    this.assertConfigured();
+    const result = await cloudinary.uploader.upload(
+      `data:${mimeType};base64,${buffer.toString('base64')}`,
+      {
+        folder: 'ionutadrian91/incidents',
+        resource_type: 'image',
+      },
+    );
+    return { publicId: result.public_id, url: result.secure_url };
+  }
+
   async removeDocument(publicId?: string | null): Promise<void> {
     if (!publicId) return;
     this.assertConfigured();
