@@ -224,7 +224,7 @@ export class MongoService {
         continue;
       }
 
-      if (['authId', 'headId', 'departmentId', 'createdById'].includes(key)) {
+      if (['authId', 'departmentId', 'createdById'].includes(key)) {
         filter[key] = this.toObjectId(value);
         continue;
       }
@@ -265,7 +265,7 @@ export class MongoService {
   }
 
   private normalizeValue(key: string, value: unknown) {
-    if (['authId', 'headId', 'departmentId', 'createdById'].includes(key)) {
+    if (['authId', 'departmentId', 'createdById'].includes(key)) {
       return this.toObjectId(value);
     }
 

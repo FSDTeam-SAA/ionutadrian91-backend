@@ -59,7 +59,7 @@ export class HrController {
   @ApiOperation({
     summary: 'Create a department',
     description:
-      'Creates a department and assigns an existing user as its head.',
+      'Creates a department immediately. No administrator approval is required.',
   })
   @ApiResponseDecorator(201, 'Department created', DepartmentEntity)
   createDepartment(@Body() dto: CreateDepartmentDto) {
@@ -82,7 +82,11 @@ export class HrController {
   }
 
   @Patch('departments/:id')
-  @ApiOperation({ summary: 'Update a department' })
+  @ApiOperation({
+    summary: 'Update a department',
+    description:
+      'Updates a department immediately. No administrator approval is required.',
+  })
   @ApiParam({ name: 'id', description: 'Department ID' })
   @ApiResponseDecorator(200, 'Department updated', DepartmentEntity)
   updateDepartment(@Param('id') id: string, @Body() dto: UpdateDepartmentDto) {
@@ -92,7 +96,8 @@ export class HrController {
   @Delete('departments/:id')
   @ApiOperation({
     summary: 'Delete a department',
-    description: 'A department with existing plans cannot be deleted.',
+    description:
+      'Deletes a department immediately. Departments with existing plans or team members cannot be deleted.',
   })
   @ApiParam({ name: 'id', description: 'Department ID' })
   @ApiResponseDecorator(200, 'Department deleted')

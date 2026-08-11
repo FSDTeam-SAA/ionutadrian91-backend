@@ -26,12 +26,18 @@ export class HrService {
   async createDepartment(dto: CreateDepartmentDto) {
     const name = dto.name.trim();
     await this.assertDepartmentNameAvailable(name);
-    await this.assertUserExists(dto.headId);
-    return this.mongo.department.create({ data: { ...dto, name } });
+    return this.toDepartmentResponse(
+      await this.mongo.department.create({ data: { ...dto, name } }),
+    );
   }
 
   async findAllDepartments() {
-    return this.mongo.department.findMany({ orderBy: { name: 'asc' } });
+    const departments = await this.mongo.department.findMany({
+      orderBy: { name: 'asc' },
+    });
+    return departments.map((department) =>
+      this.toDepartmentResponse(department),
+    );
   }
 
   async findDepartment(id: string) {
@@ -39,7 +45,7 @@ export class HrService {
       where: { id },
     });
     if (!department) throw new NotFoundException('Department not found');
-    return department;
+    return this.toDepartmentResponse(department);
   }
 
   async updateDepartment(id: string, dto: UpdateDepartmentDto) {
@@ -49,8 +55,9 @@ export class HrService {
       data.name = dto.name.trim();
       await this.assertDepartmentNameAvailable(data.name as string, id);
     }
-    if (dto.headId !== undefined) await this.assertUserExists(dto.headId);
-    return this.mongo.department.update({ where: { id }, data });
+    return this.toDepartmentResponse(
+      await this.mongo.department.update({ where: { id }, data }),
+    );
   }
 
   async removeDepartment(id: string) {
@@ -198,14 +205,6 @@ export class HrService {
     return { data: member.photoData, mimeType: member.photoMimeType };
   }
 
-  private async assertUserExists(id: string) {
-    const user = await this.mongo.authUser.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!user) throw new NotFoundException('Department head user not found');
-  }
-
   private async assertDepartmentNameAvailable(name: string, exceptId?: string) {
     const existing = await this.mongo.department.findFirst({
       where: { name: new RegExp(`^${this.escapeRegex(name)}$`, 'i') },
@@ -232,5 +231,11 @@ export class HrService {
 
   private escapeRegex(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private toDepartmentResponse(department: Record<string, unknown>) {
+    const response = { ...department };
+    delete response.headId;
+    return response;
   }
 }
