@@ -73,16 +73,7 @@ export class AuthGuard implements CanActivate {
   }
 
   private assertPlatformAccess(role: UserRole, request: Request) {
-    if (role !== UserRole.Field) {
-      return;
-    }
-
-    const platform = String(
-      request.headers['x-client-platform'] || '',
-    ).toLowerCase();
-    if (platform !== ClientPlatform.Mobile) {
-      throw new ForbiddenException('Field users can access mobile only');
-    }
+    // Restrictions removed as requested
   }
 
   /**

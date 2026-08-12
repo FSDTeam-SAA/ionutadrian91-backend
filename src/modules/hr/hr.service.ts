@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { MongoService } from '../../common/services/mongo.service';
 import { CloudinaryService } from '../../common/services/cloudinary.service';
-import { HrPlanStatus } from '../../common/schemas';
+import { HrPlanStatus, UserRole, UserStatus } from '../../common/schemas';
+import * as bcrypt from 'bcryptjs';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { ListPlansDto } from './dto/list-plans.dto';
@@ -141,7 +142,7 @@ export class HrService {
   async createTeamMember(dto: CreateTeamMemberDto, photo?: UploadedPhoto) {
     await this.findDepartment(dto.departmentId);
     await this.assertWorkEmailAvailable(dto.workEmail);
-    const { photo: _photo, ...data } = dto;
+    const { photo: _photo, defaultPassword, ...data } = dto;
     const uploadedPhoto = photo
       ? await this.cloudinary.uploadTeamMemberPhoto(
           photo.buffer,
@@ -149,7 +150,7 @@ export class HrService {
         )
       : undefined;
     try {
-      return await this.mongo.teamMember.create({
+      const teamMember = await this.mongo.teamMember.create({
         data: {
           ...data,
           workEmail: dto.workEmail.toLowerCase(),
@@ -162,6 +163,43 @@ export class HrService {
             : {}),
         },
       });
+
+      if (defaultPassword) {
+        // Also check if AuthUser already exists with this email
+        const existingAuth = await this.mongo.authUser.findFirst({
+          where: { email: dto.workEmail.toLowerCase() },
+        });
+
+        if (!existingAuth) {
+          const hashedPassword = await bcrypt.hash(defaultPassword, 12);
+          const userRole = dto.employeeCategory === 'ENGINEER' || dto.employeeCategory === 'WORKER'
+            ? UserRole.User
+            : UserRole.Office;
+
+          const authUser = await this.mongo.authUser.create({
+            data: {
+              email: dto.workEmail.toLowerCase(),
+              username: dto.workEmail.split('@')[0],
+              password: hashedPassword,
+              role: userRole,
+              status: UserStatus.Active,
+              verified: true,
+              provider: 'local',
+              tokenVersion: 0,
+            },
+          });
+          
+          await this.mongo.userProfile.create({
+            data: {
+              authId: authUser.id,
+              firstName: dto.fullName.split(' ')[0] || '',
+              lastName: dto.fullName.split(' ').slice(1).join(' ') || '',
+            },
+          });
+        }
+      }
+
+      return teamMember;
     } catch (error) {
       await this.cloudinary.removePhoto(uploadedPhoto?.publicId);
       throw error;

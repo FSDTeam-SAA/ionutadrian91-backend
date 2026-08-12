@@ -30,7 +30,7 @@ export class IncidentsController {
   constructor(private readonly incidentsService: IncidentsService) {}
 
   @Post()
-  @Roles(UserRole.Administrator, UserRole.Field, UserRole.Office, UserRole.HR)
+  @Roles(UserRole.Administrator, UserRole.User, UserRole.Office, UserRole.HR)
   @ApiOperation({ summary: 'Submit a new incident report' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateIncidentDto })

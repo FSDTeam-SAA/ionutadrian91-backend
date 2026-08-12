@@ -27,14 +27,14 @@ export class DutyOfCareController {
   constructor(private readonly dutyOfCareService: DutyOfCareService) {}
 
   @Post('clock-in')
-  @Roles(UserRole.Administrator, UserRole.Field, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.User, UserRole.Office)
   @ApiOperation({ summary: 'Employee clocks in (Starts work)' })
   clockIn(@Request() req: any, @Body() clockInDto: ClockInDto) {
     return this.dutyOfCareService.clockIn(req.user.email, clockInDto);
   }
 
   @Patch(':id/clock-out')
-  @Roles(UserRole.Administrator, UserRole.Field, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.User, UserRole.Office)
   @ApiOperation({ summary: 'Employee clocks out (Ends work)' })
   clockOut(@Request() req: any, @Param('id') id: string, @Body() clockOutDto: ClockOutDto) {
     return this.dutyOfCareService.clockOut(req.user.email, id, clockOutDto);

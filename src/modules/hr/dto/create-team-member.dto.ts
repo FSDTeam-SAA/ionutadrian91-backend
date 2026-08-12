@@ -104,10 +104,6 @@ export class CreateTeamMemberDto {
   @IsIn(WEEK_DAYS, { each: true })
   weekendDays: (typeof WEEK_DAYS)[number][];
 
-  @ApiProperty({ example: 'Engineer' })
-  @IsString()
-  @MaxLength(80)
-  portalPermission: string;
 
   @ApiProperty({ example: 'jane.stewart@example.com' })
   @IsEmail()
@@ -140,4 +136,10 @@ export class CreateTeamMemberDto {
   @Transform(({ value }) => Number(value))
   @IsNumber()
   leaveBalance?: number;
+
+  @ApiPropertyOptional({ example: 'Secret123!', description: 'Default password for the team member to login' })
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  defaultPassword?: string;
 }

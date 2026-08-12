@@ -45,7 +45,7 @@ export class AuthController {
       blockDuration: THROTTLER_CONFIG.STRICT.ttl,
     },
   })
-  @ApiResponseDecorator(201, 'Field user registered', RegisterResponseDto)
+  @ApiResponseDecorator(201, 'User registered', RegisterResponseDto)
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }

@@ -68,9 +68,6 @@ export class TeamMember {
   @Prop({ type: [String], default: [] })
   weekendDays: string[];
 
-  @Prop({ required: true, trim: true })
-  portalPermission: string;
-
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   workEmail: string;
 

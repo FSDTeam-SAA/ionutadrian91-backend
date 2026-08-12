@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { MongoService } from '../../common/services/mongo.service';
 import { CloudinaryService } from '../../common/services/cloudinary.service';
@@ -28,11 +29,16 @@ export class LeaveService {
   }
 
   async applyLeave(
-    email: string,
+    userId: string,
     dto: ApplyLeaveDto,
     file?: Express.Multer.File,
   ) {
-    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: email });
+    const authUser = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!authUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: authUser.email });
     if (!teamMember) {
       throw new NotFoundException('Team member profile not found');
     }
@@ -73,8 +79,13 @@ export class LeaveService {
     return request;
   }
 
-  async getMyHistory(email: string) {
-    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: email });
+  async getMyHistory(userId: string) {
+    const authUser = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!authUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: authUser.email });
     if (!teamMember) {
       throw new NotFoundException('Team member profile not found');
     }
