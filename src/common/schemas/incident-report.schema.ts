@@ -17,6 +17,9 @@ export class IncidentReport {
   @Prop({ type: Types.ObjectId, required: true, ref: 'Project' })
   projectId: Types.ObjectId;
 
+  @Prop({ required: true, trim: true })
+  type: string;
+
   @Prop({ type: Date, required: true })
   date: Date;
 
@@ -56,6 +59,12 @@ export class IncidentReport {
 
   @Prop({ type: String, default: '' })
   rootCause?: string;
+
+  @Prop({ type: String, default: '' })
+  actionOwner?: string;
+
+  @Prop({ type: Date, default: null })
+  dueDate?: Date | null;
 }
 
 export const IncidentReportSchema = SchemaFactory.createForClass(IncidentReport);

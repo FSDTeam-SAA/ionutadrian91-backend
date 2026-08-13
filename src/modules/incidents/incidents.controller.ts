@@ -51,7 +51,7 @@ export class IncidentsController {
       ...body,
       location,
     };
-    return this.incidentsService.create(req.user.email, dto, file);
+    return this.incidentsService.create(req.user.userId, dto, file);
   }
 
   @Get('dashboard')

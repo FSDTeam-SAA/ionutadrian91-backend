@@ -8,10 +8,16 @@ import { Types } from 'mongoose';
 export class DutyOfCareService {
   constructor(private readonly mongo: MongoService) {}
 
-  async clockIn(email: string, dto: ClockInDto) {
-    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: email });
+  private async getTeamMemberByUserId(userId: string) {
+    const user = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Authentication record not found');
+    return this.mongo.teamMemberModel.findOne({ workEmail: user.email });
+  }
+
+  async clockIn(userId: string, dto: ClockInDto) {
+    const teamMember = await this.getTeamMemberByUserId(userId);
     if (!teamMember) {
-      throw new NotFoundException('Team member profile not found');
+      throw new NotFoundException('Your Team Member profile was not found. Please create a profile in the HR module with your email address to clock in.');
     }
 
     // Optional: Check if already clocked in without clocking out
@@ -37,10 +43,10 @@ export class DutyOfCareService {
     return this.mongo.dutyOfCare.create(payload);
   }
 
-  async clockOut(email: string, id: string, dto: ClockOutDto) {
-    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: email });
+  async clockOut(userId: string, id: string, dto: ClockOutDto) {
+    const teamMember = await this.getTeamMemberByUserId(userId);
     if (!teamMember) {
-      throw new NotFoundException('Team member profile not found');
+      throw new NotFoundException('Your Team Member profile was not found. Please create a profile in the HR module with your email address.');
     }
 
     const duty = await this.mongo.dutyOfCare.findOne({
@@ -63,6 +69,20 @@ export class DutyOfCareService {
 
     await duty.save();
     return duty;
+  }
+
+  async findMyRecords(userId: string) {
+    const teamMember = await this.getTeamMemberByUserId(userId);
+    if (!teamMember) {
+      // If the user (e.g., Admin) doesn't have a profile, they simply have no records yet.
+      return [];
+    }
+
+    return this.mongo.dutyOfCare
+      .find({ teamMemberId: teamMember._id })
+      .populate('teamMemberId', 'fullName workEmail jobTitle employeeCategory')
+      .populate('projectId', 'name status')
+      .sort({ startTime: -1 });
   }
 
   async findAll(filters: {

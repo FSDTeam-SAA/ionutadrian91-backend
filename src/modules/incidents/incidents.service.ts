@@ -12,10 +12,17 @@ export class IncidentsService {
     private readonly cloudinary: CloudinaryService,
   ) {}
 
-  async create(email: string, dto: CreateIncidentDto, file?: Express.Multer.File) {
-    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: email });
+  async create(userId: string, dto: CreateIncidentDto, file?: Express.Multer.File) {
+    const user = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Authentication record not found');
+    }
+
+    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: user.email });
     if (!teamMember) {
-      throw new NotFoundException('Team member profile not found');
+      throw new NotFoundException(
+        'Your Team Member profile was not found. Please contact HR to create a profile with your registered email.',
+      );
     }
 
     let photoUrl: string | null = null;
@@ -33,6 +40,7 @@ export class IncidentsService {
     const incident = await this.mongo.incidentReport.create({
       teamMemberId: teamMember._id,
       projectId: new Types.ObjectId(dto.projectId),
+      type: dto.type,
       date: new Date(dto.date),
       details: dto.details,
       location: dto.location,

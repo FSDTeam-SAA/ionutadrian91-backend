@@ -18,4 +18,14 @@ export class UpdateIncidentDto extends PartialType(CreateIncidentDto) {
   @IsOptional()
   @IsString()
   rootCause?: string;
+
+  @ApiPropertyOptional({ example: 'John Doe' })
+  @IsOptional()
+  @IsString()
+  actionOwner?: string;
+
+  @ApiPropertyOptional({ example: '2026-12-31' })
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
 }

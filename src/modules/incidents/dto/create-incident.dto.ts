@@ -29,6 +29,11 @@ export class CreateIncidentDto {
   @IsNotEmpty()
   projectId: string;
 
+  @ApiProperty({ example: 'Equipment Failure' })
+  @IsString()
+  @IsNotEmpty()
+  type: string;
+
   @ApiProperty({ example: '2026-08-15T09:00:00Z', description: 'Date and Time of Incident' })
   @IsDateString()
   @IsNotEmpty()
