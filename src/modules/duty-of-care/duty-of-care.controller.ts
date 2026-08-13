@@ -27,17 +27,24 @@ export class DutyOfCareController {
   constructor(private readonly dutyOfCareService: DutyOfCareService) {}
 
   @Post('clock-in')
-  @Roles(UserRole.Administrator, UserRole.User, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.HR, UserRole.User, UserRole.Office)
   @ApiOperation({ summary: 'Employee clocks in (Starts work)' })
   clockIn(@Request() req: any, @Body() clockInDto: ClockInDto) {
-    return this.dutyOfCareService.clockIn(req.user.email, clockInDto);
+    return this.dutyOfCareService.clockIn(req.user.userId, clockInDto);
   }
 
   @Patch(':id/clock-out')
-  @Roles(UserRole.Administrator, UserRole.User, UserRole.Office)
+  @Roles(UserRole.Administrator, UserRole.HR, UserRole.User, UserRole.Office)
   @ApiOperation({ summary: 'Employee clocks out (Ends work)' })
   clockOut(@Request() req: any, @Param('id') id: string, @Body() clockOutDto: ClockOutDto) {
-    return this.dutyOfCareService.clockOut(req.user.email, id, clockOutDto);
+    return this.dutyOfCareService.clockOut(req.user.userId, id, clockOutDto);
+  }
+
+  @Get('my-records')
+  @Roles(UserRole.Administrator, UserRole.HR, UserRole.User, UserRole.Office)
+  @ApiOperation({ summary: 'Get current user duty of care records' })
+  getMyRecords(@Request() req: any) {
+    return this.dutyOfCareService.findMyRecords(req.user.userId);
   }
 
   @Get()
