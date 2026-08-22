@@ -18,6 +18,9 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { WhereaboutsModule } from './modules/whereabouts/whereabouts.module';
 import { DutyOfCareModule } from './modules/duty-of-care/duty-of-care.module';
 import { IncidentsModule } from './modules/incidents/incidents.module';
+import { VehiclesModule } from './modules/vehicles/vehicles.module';
+import { RiskAssessmentsModule } from './modules/risk-assessments/risk-assessments.module';
+import { WorkspaceFilesModule } from './modules/workspace-files/workspace-files.module';
 
 @Module({
   imports: [
@@ -48,6 +51,9 @@ import { IncidentsModule } from './modules/incidents/incidents.module';
     WhereaboutsModule,
     DutyOfCareModule,
     IncidentsModule,
+    VehiclesModule,
+    RiskAssessmentsModule,
+    WorkspaceFilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

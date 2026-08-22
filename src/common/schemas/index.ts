@@ -12,3 +12,8 @@ export * from './project.schema';
 export * from './whereabouts.schema';
 export * from './duty-of-care.schema';
 export * from './incident-report.schema';
+export * from './vehicle.schema';
+export * from './vehicle-location-history.schema';
+export * from './job.schema';
+export * from './risk-assessment.schema';
+export * from './workspace-file.schema';

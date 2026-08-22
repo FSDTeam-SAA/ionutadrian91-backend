@@ -48,6 +48,24 @@ export class CloudinaryService {
     return { publicId: result.public_id, url: result.secure_url, originalName };
   }
 
+  async uploadWorkspaceFile(
+    buffer: Buffer,
+    mimeType: string,
+    originalName: string,
+  ) {
+    this.assertConfigured();
+    const result = await cloudinary.uploader.upload(
+      `data:${mimeType};base64,${buffer.toString('base64')}`,
+      {
+        folder: 'ionutadrian91/workspace',
+        resource_type: 'auto',
+        use_filename: true,
+        unique_filename: true,
+      },
+    );
+    return { publicId: result.public_id, url: result.secure_url, originalName };
+  }
+
   async uploadIncidentPhoto(
     buffer: Buffer,
     mimeType: string,

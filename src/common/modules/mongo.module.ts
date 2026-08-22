@@ -31,6 +31,16 @@ import {
   DutyOfCareSchema,
   IncidentReport,
   IncidentReportSchema,
+  Vehicle,
+  VehicleSchema,
+  VehicleLocationHistory,
+  VehicleLocationHistorySchema,
+  RiskAssessment,
+  RiskAssessmentSchema,
+  WorkspaceFolder,
+  WorkspaceFolderSchema,
+  WorkspaceFile,
+  WorkspaceFileSchema,
 } from '../schemas';
 
 @Global()
@@ -52,6 +62,14 @@ import {
       { name: Whereabouts.name, schema: WhereaboutsSchema },
       { name: DutyOfCare.name, schema: DutyOfCareSchema },
       { name: IncidentReport.name, schema: IncidentReportSchema },
+      { name: Vehicle.name, schema: VehicleSchema },
+      {
+        name: VehicleLocationHistory.name,
+        schema: VehicleLocationHistorySchema,
+      },
+      { name: RiskAssessment.name, schema: RiskAssessmentSchema },
+      { name: WorkspaceFolder.name, schema: WorkspaceFolderSchema },
+      { name: WorkspaceFile.name, schema: WorkspaceFileSchema },
     ]),
   ],
   providers: [MongoService],
