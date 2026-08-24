@@ -223,6 +223,14 @@ export class HrService {
     documents?: UploadedPhoto[],
   ) {
     const existingMember = await this.findTeamMember(id);
+    const nextWorkEmail = dto.workEmail?.toLowerCase();
+    const linkedAuthUser = nextWorkEmail && nextWorkEmail !== existingMember.workEmail
+      ? await this.mongo.authUser.findFirst({ where: { email: existingMember.workEmail } })
+      : null;
+    if (linkedAuthUser && nextWorkEmail) {
+      const conflictingAuthUser = await this.mongo.authUser.findFirst({ where: { email: nextWorkEmail } });
+      if (conflictingAuthUser && conflictingAuthUser.id !== linkedAuthUser.id) throw new BadRequestException('An account already uses this work email');
+    }
     if (dto.departmentId) await this.findDepartment(dto.departmentId);
     if (dto.workEmail) await this.assertWorkEmailAvailable(dto.workEmail, id);
     const { photo: _photo, ...data } = dto;
@@ -280,6 +288,12 @@ export class HrService {
           ...(documents && documents.length > 0 ? { documents: newDocs } : {}),
         },
       });
+      if (linkedAuthUser && nextWorkEmail) {
+        await this.mongo.authUser.update({
+          where: { id: linkedAuthUser.id },
+          data: { email: nextWorkEmail },
+        });
+      }
     } catch (error) {
       await this.cloudinary.removePhoto(uploadedPhoto?.publicId);
       for (const doc of uploadedDocuments) {

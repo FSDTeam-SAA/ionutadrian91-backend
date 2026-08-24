@@ -46,6 +46,16 @@ export class WorkspaceFilesService {
       createdBy: new Types.ObjectId(userId),
     });
   }
+  async updateFolderAccess(folderId: string, memberIds: string[]) {
+    if (!Types.ObjectId.isValid(folderId)) throw new NotFoundException('Folder not found');
+    const uniqueIds = [...new Set(memberIds)];
+    if (uniqueIds.some((id) => !Types.ObjectId.isValid(id))) throw new NotFoundException('A selected team member was not found');
+    const found = await this.members.countDocuments({ _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) } });
+    if (found !== uniqueIds.length) throw new NotFoundException('A selected team member was not found');
+    const folder = await this.folders.findByIdAndUpdate(folderId, { memberIds: uniqueIds.map((id) => new Types.ObjectId(id)) }, { new: true }).lean().exec();
+    if (!folder) throw new NotFoundException('Folder not found');
+    return folder;
+  }
   async upload(
     file: Express.Multer.File,
     folderId: string | undefined,

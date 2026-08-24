@@ -109,7 +109,7 @@ export class WhereaboutsService {
     return { success: true };
   }
 
-  async getCalendar(month?: number, year?: number) {
+  async getCalendar(month?: number, year?: number, memberId?: string) {
     const now = new Date();
     const m = month || now.getMonth() + 1;
     const y = year || now.getFullYear();
@@ -119,12 +119,17 @@ export class WhereaboutsService {
 
     const assignments = await this.mongo.whereabouts
       .find({
-        $or: [
+        $and: [
           { startDate: { $lte: endOfMonth }, endDate: { $gte: startOfMonth } },
+          ...(memberId && Types.ObjectId.isValid(memberId)
+            ? [{ $or: [{ engineers: new Types.ObjectId(memberId) }, { workers: new Types.ObjectId(memberId) }] }]
+            : []),
         ],
       })
       .populate('projectId', 'name')
-      .select('title startDate endDate location projectId');
+      .populate('engineers', 'fullName')
+      .populate('workers', 'fullName')
+      .select('title startDate endDate location projectId engineers workers');
 
     return assignments;
   }

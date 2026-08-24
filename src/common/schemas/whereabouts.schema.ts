@@ -20,15 +20,15 @@ export class Whereabouts {
   @Prop({
     type: {
       address: { type: String, required: true },
-      latitude: { type: Number, required: true },
-      longitude: { type: Number, required: true },
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
     },
     required: true,
   })
   location: {
     address: string;
-    latitude: number;
-    longitude: number;
+    latitude?: number | null;
+    longitude?: number | null;
   };
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'TeamMember' }], default: [] })

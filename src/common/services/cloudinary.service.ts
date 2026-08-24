@@ -81,6 +81,18 @@ export class CloudinaryService {
     return { publicId: result.public_id, url: result.secure_url };
   }
 
+  async uploadVehicleCheckPhoto(
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<CloudinaryPhoto> {
+    this.assertConfigured();
+    const result = await cloudinary.uploader.upload(
+      `data:${mimeType};base64,${buffer.toString('base64')}`,
+      { folder: 'ionutadrian91/vehicle-checks', resource_type: 'image' },
+    );
+    return { publicId: result.public_id, url: result.secure_url };
+  }
+
   async removeDocument(publicId?: string | null): Promise<void> {
     if (!publicId) return;
     this.assertConfigured();

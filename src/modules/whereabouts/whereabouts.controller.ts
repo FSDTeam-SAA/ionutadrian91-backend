@@ -46,8 +46,8 @@ export class WhereaboutsController {
   @ApiOperation({ summary: 'Get total assignments for calendar view' })
   @ApiQuery({ name: 'month', required: false, type: Number })
   @ApiQuery({ name: 'year', required: false, type: Number })
-  getCalendar(@Query('month') month?: number, @Query('year') year?: number) {
-    return this.whereaboutsService.getCalendar(month, year);
+  getCalendar(@Query('month') month?: number, @Query('year') year?: number, @Query('memberId') memberId?: string) {
+    return this.whereaboutsService.getCalendar(month, year, memberId);
   }
 
   @Get()

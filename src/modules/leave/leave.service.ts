@@ -95,6 +95,31 @@ export class LeaveService {
       .sort({ createdAt: -1 });
   }
 
+  async getTeamMemberLeaveSummary(teamMemberId: string) {
+    if (!Types.ObjectId.isValid(teamMemberId)) {
+      throw new NotFoundException('Team member not found');
+    }
+    const member = await this.mongo.teamMemberModel
+      .findById(teamMemberId)
+      .select('leaveBalance')
+      .lean()
+      .exec();
+    if (!member) throw new NotFoundException('Team member not found');
+    const requests = await this.mongo.leaveRequest
+      .find({ teamMemberId: new Types.ObjectId(teamMemberId) })
+      .select('startDate endDate status')
+      .lean()
+      .exec();
+    const totals = { totalRequests: requests.length, approvedRequests: 0, pendingRequests: 0, rejectedRequests: 0, approvedDaysTaken: 0, pendingDaysRequested: 0, remainingBalance: member.leaveBalance ?? 0 };
+    for (const request of requests) {
+      const days = this.calculateDays(request.startDate.toISOString(), request.endDate.toISOString());
+      if (request.status === LeaveStatus.APPROVED) { totals.approvedRequests += 1; totals.approvedDaysTaken += days; }
+      else if (request.status === LeaveStatus.PENDING) { totals.pendingRequests += 1; totals.pendingDaysRequested += days; }
+      else totals.rejectedRequests += 1;
+    }
+    return totals;
+  }
+
   async updateStatus(id: string, dto: UpdateLeaveStatusDto) {
     const request = await this.mongo.leaveRequest.findById(id).populate('teamMemberId');
     if (!request) {
@@ -112,7 +137,8 @@ export class LeaveService {
         request.startDate.toISOString(),
         request.endDate.toISOString(),
       );
-      await this.mongo.teamMemberModel.findByIdAndUpdate(request.teamMemberId, {
+      const memberId = (request.teamMemberId as any)?._id ?? request.teamMemberId;
+      await this.mongo.teamMemberModel.findByIdAndUpdate(memberId, {
         $inc: { leaveBalance: -requestedDays },
       });
     }

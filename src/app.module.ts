@@ -21,6 +21,8 @@ import { IncidentsModule } from './modules/incidents/incidents.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { RiskAssessmentsModule } from './modules/risk-assessments/risk-assessments.module';
 import { WorkspaceFilesModule } from './modules/workspace-files/workspace-files.module';
+import { TimesheetsModule } from './modules/timesheets/timesheets.module';
+import { VehicleChecksModule } from './modules/vehicle-checks/vehicle-checks.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { WorkspaceFilesModule } from './modules/workspace-files/workspace-files.
     VehiclesModule,
     RiskAssessmentsModule,
     WorkspaceFilesModule,
+    TimesheetsModule,
+    VehicleChecksModule,
   ],
   controllers: [AppController],
   providers: [AppService],

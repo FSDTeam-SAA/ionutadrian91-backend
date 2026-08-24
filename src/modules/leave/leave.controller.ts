@@ -72,6 +72,14 @@ export class LeaveController {
     return this.leaveService.getCalendar(m, y);
   }
 
+  @Get('team-members/:id/summary')
+  @Roles(UserRole.Administrator, UserRole.HR)
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Get a team member leave balance and leave totals' })
+  getTeamMemberLeaveSummary(@Param('id') id: string) {
+    return this.leaveService.getTeamMemberLeaveSummary(id);
+  }
+
   @Get()
   @Roles(UserRole.Administrator, UserRole.HR)
   @UseGuards(RolesGuard)

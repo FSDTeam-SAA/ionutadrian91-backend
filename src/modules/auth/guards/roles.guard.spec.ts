@@ -25,4 +25,17 @@ describe('RolesGuard', () => {
 
     expect(guard.canActivate(context)).toBe(true);
   });
+
+  it('allows legacy ENGINEER JWTs on user endpoints', () => {
+    jest.mocked(reflector.getAllAndOverride).mockReturnValue([UserRole.User]);
+    const context = {
+      getHandler: jest.fn(),
+      getClass: jest.fn(),
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { role: 'ENGINEER' } }),
+      }),
+    } as unknown as ExecutionContext;
+
+    expect(guard.canActivate(context)).toBe(true);
+  });
 });

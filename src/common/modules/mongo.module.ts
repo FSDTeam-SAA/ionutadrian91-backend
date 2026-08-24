@@ -41,6 +41,12 @@ import {
   WorkspaceFolderSchema,
   WorkspaceFile,
   WorkspaceFileSchema,
+  RateCard,
+  RateCardSchema,
+  Timesheet,
+  TimesheetSchema,
+  VehicleCheck,
+  VehicleCheckSchema,
 } from '../schemas';
 
 @Global()
@@ -70,6 +76,9 @@ import {
       { name: RiskAssessment.name, schema: RiskAssessmentSchema },
       { name: WorkspaceFolder.name, schema: WorkspaceFolderSchema },
       { name: WorkspaceFile.name, schema: WorkspaceFileSchema },
+      { name: RateCard.name, schema: RateCardSchema },
+      { name: Timesheet.name, schema: TimesheetSchema },
+      { name: VehicleCheck.name, schema: VehicleCheckSchema },
     ]),
   ],
   providers: [MongoService],

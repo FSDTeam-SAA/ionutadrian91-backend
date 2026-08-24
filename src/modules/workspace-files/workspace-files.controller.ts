@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Param,
   Controller,
   Get,
   Patch,
@@ -32,12 +33,15 @@ class MoveDto {
   @IsMongoId() fileId: string;
   @IsMongoId() folderId: string;
 }
+class FolderAccessDto { @IsArray() @IsMongoId({ each: true }) memberIds: string[]; }
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('workspace-files')
 export class WorkspaceFilesController {
   constructor(private s: WorkspaceFilesService) {}
   private manager(u: AuthenticatedUser) {
-    return [UserRole.Administrator, UserRole.HR].includes(u.role as UserRole);
+    return [UserRole.Administrator, UserRole.HR, 'ADMIN' as UserRole].includes(
+      u.role as UserRole,
+    );
   }
   @Get()
   @Roles(UserRole.Administrator, UserRole.HR, UserRole.Office, UserRole.User)
@@ -63,6 +67,10 @@ export class WorkspaceFilesController {
     if (!file) throw new BadRequestException('Select a file to upload');
     return this.s.upload(file, folderId, u.userId, this.manager(u));
   }
+  @Patch('folders/:id/access') @Roles(UserRole.Administrator, UserRole.HR) access(
+    @Param('id') id: string,
+    @Body() d: FolderAccessDto,
+  ) { return this.s.updateFolderAccess(id, d.memberIds); }
   @Patch('move') @Roles(UserRole.Administrator, UserRole.HR) move(
     @Body() d: MoveDto,
     @CurrentUser() u: AuthenticatedUser,
