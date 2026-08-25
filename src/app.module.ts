@@ -23,6 +23,7 @@ import { RiskAssessmentsModule } from './modules/risk-assessments/risk-assessmen
 import { WorkspaceFilesModule } from './modules/workspace-files/workspace-files.module';
 import { TimesheetsModule } from './modules/timesheets/timesheets.module';
 import { VehicleChecksModule } from './modules/vehicle-checks/vehicle-checks.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { VehicleChecksModule } from './modules/vehicle-checks/vehicle-checks.mod
     WorkspaceFilesModule,
     TimesheetsModule,
     VehicleChecksModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
