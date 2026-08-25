@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { MongoService } from '../../common/services/mongo.service';
 import { CreateWhereaboutsDto } from './dto/create-whereabouts.dto';
 import { UpdateWhereaboutsDto } from './dto/update-whereabouts.dto';
@@ -20,7 +24,11 @@ export class WhereaboutsService {
     return whereabouts;
   }
 
-  async findAll(filters: { title?: string; startDate?: string; endDate?: string }) {
+  async findAll(filters: {
+    title?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
     const query: any = {};
 
     if (filters.title) {
@@ -58,6 +66,17 @@ export class WhereaboutsService {
     return whereabouts;
   }
 
+  async findMine(userId: string) {
+    const memberId = await this.memberIdForUser(userId);
+    return this.mongo.whereabouts
+      .find({ $or: [{ engineers: memberId }, { workers: memberId }] })
+      .populate('projectId', 'name status')
+      .populate('engineers', 'fullName workEmail jobTitle')
+      .populate('workers', 'fullName workEmail jobTitle')
+      .sort({ startDate: 1 })
+      .exec();
+  }
+
   async update(id: string, dto: UpdateWhereaboutsDto) {
     const updateData: any = { ...dto };
     if (dto.projectId) updateData.projectId = new Types.ObjectId(dto.projectId);
@@ -70,14 +89,11 @@ export class WhereaboutsService {
       updateData.workers = dto.workers.map((w) => new Types.ObjectId(w));
     }
 
-    const whereabouts = await this.mongo.whereabouts.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true },
-    )
-    .populate('projectId')
-    .populate('engineers')
-    .populate('workers');
+    const whereabouts = await this.mongo.whereabouts
+      .findByIdAndUpdate(id, updateData, { new: true })
+      .populate('projectId')
+      .populate('engineers')
+      .populate('workers');
 
     if (!whereabouts) {
       throw new NotFoundException('Task assignment not found');
@@ -93,7 +109,7 @@ export class WhereaboutsService {
     return { success: true };
   }
 
-  async getCalendar(month?: number, year?: number) {
+  async getCalendar(month?: number, year?: number, memberId?: string) {
     const now = new Date();
     const m = month || now.getMonth() + 1;
     const y = year || now.getFullYear();
@@ -103,13 +119,43 @@ export class WhereaboutsService {
 
     const assignments = await this.mongo.whereabouts
       .find({
-        $or: [
+        $and: [
           { startDate: { $lte: endOfMonth }, endDate: { $gte: startOfMonth } },
+          ...(memberId && Types.ObjectId.isValid(memberId)
+            ? [{ $or: [{ engineers: new Types.ObjectId(memberId) }, { workers: new Types.ObjectId(memberId) }] }]
+            : []),
         ],
       })
       .populate('projectId', 'name')
-      .select('title startDate endDate location projectId');
+      .populate('engineers', 'fullName')
+      .populate('workers', 'fullName')
+      .select('title startDate endDate location projectId engineers workers');
 
     return assignments;
+  }
+
+  private async memberIdForUser(userId: string) {
+    if (!Types.ObjectId.isValid(userId)) {
+      throw new ForbiddenException(
+        'No team member profile associated with this account',
+      );
+    }
+    const user = await this.mongo.authUser.findFirst({
+      where: { id: userId },
+      select: { email: true },
+    });
+    const member = user
+      ? await this.mongo.teamMemberModel
+          .findOne({ workEmail: user.email })
+          .select('_id')
+          .lean()
+          .exec()
+      : null;
+    if (!member) {
+      throw new ForbiddenException(
+        'No team member profile associated with this account',
+      );
+    }
+    return member._id;
   }
 }

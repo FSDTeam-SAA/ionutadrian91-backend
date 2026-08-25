@@ -25,10 +25,12 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const userRole =
-      request.user.role === ('ADMIN' as UserRole)
-        ? UserRole.Administrator
-        : request.user.role;
+    const legacyRoleMap: Record<string, UserRole> = {
+      ADMIN: UserRole.Administrator,
+      ENGINEER: UserRole.User,
+      WORKER: UserRole.User,
+    };
+    const userRole = legacyRoleMap[String(request.user.role)] ?? request.user.role;
 
     if (!requiredRoles.includes(userRole)) {
       throw new ForbiddenException(

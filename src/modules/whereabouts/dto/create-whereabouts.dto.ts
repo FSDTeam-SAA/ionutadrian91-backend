@@ -16,13 +16,13 @@ class LocationDto {
   @IsNotEmpty()
   address: string;
 
-  @ApiProperty({ example: 40.7128 })
-  @IsNotEmpty()
-  latitude: number;
+  @ApiPropertyOptional({ example: 40.7128 })
+  @IsOptional()
+  latitude?: number;
 
-  @ApiProperty({ example: -74.006 })
-  @IsNotEmpty()
-  longitude: number;
+  @ApiPropertyOptional({ example: -74.006 })
+  @IsOptional()
+  longitude?: number;
 }
 
 export class CreateWhereaboutsDto {
