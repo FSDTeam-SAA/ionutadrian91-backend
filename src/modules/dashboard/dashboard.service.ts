@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -7,6 +7,8 @@ import {
   IncidentReport,
   IncidentReportDocument,
   IncidentStatus,
+  AuthUser,
+  AuthUserDocument,
   LeaveRequest,
   LeaveRequestDocument,
   LeaveStatus,
@@ -18,6 +20,11 @@ import {
   RiskAssessmentStatus,
   TeamMember,
   TeamMemberDocument,
+  Timesheet,
+  TimesheetDocument,
+  TimesheetStatus,
+  Vehicle,
+  VehicleDocument,
   Whereabouts,
   WhereaboutsDocument,
 } from '../../common/schemas';
@@ -34,6 +41,8 @@ export class DashboardService {
   constructor(
     @InjectModel(DutyOfCare.name)
     private readonly dutyOfCare: Model<DutyOfCareDocument>,
+    @InjectModel(AuthUser.name)
+    private readonly authUsers: Model<AuthUserDocument>,
     @InjectModel(IncidentReport.name)
     private readonly incidents: Model<IncidentReportDocument>,
     @InjectModel(LeaveRequest.name)
@@ -46,6 +55,10 @@ export class DashboardService {
     private readonly whereabouts: Model<WhereaboutsDocument>,
     @InjectModel(TeamMember.name)
     private readonly teamMembers: Model<TeamMemberDocument>,
+    @InjectModel(Timesheet.name)
+    private readonly timesheets: Model<TimesheetDocument>,
+    @InjectModel(Vehicle.name)
+    private readonly vehicles: Model<VehicleDocument>,
   ) {}
 
   async getOverview() {
@@ -130,6 +143,60 @@ export class DashboardService {
         status: project.status,
         endDate: project.endDate,
       })),
+      activity,
+    };
+  }
+
+  async getEngineerOverview(userId: string) {
+    const user = await this.authUsers.findById(userId).select('email').lean();
+    const member = user
+      ? await this.teamMembers.findOne({ workEmail: user.email }).select('fullName jobTitle leaveBalance').lean()
+      : null;
+
+    if (!member) {
+      throw new NotFoundException('Team member profile not found');
+    }
+
+    const now = new Date();
+    const memberId = member._id;
+    const assignmentFilter = { $or: [{ engineers: memberId }, { workers: memberId }] };
+    const [activeDuty, currentAssignment, upcomingAssignment, pendingLeaveApplications, submittedTimesheets, rejectedTimesheets, vehicle, recentDuties, recentLeaves, recentTimesheets] = await Promise.all([
+      this.dutyOfCare.findOne({ teamMemberId: memberId, endTime: null }).sort({ startTime: -1 }).lean(),
+      this.whereabouts.findOne({ ...assignmentFilter, startDate: { $lte: now }, endDate: { $gte: now } }).populate('projectId', 'name').sort({ startDate: 1 }).lean(),
+      this.whereabouts.findOne({ ...assignmentFilter, startDate: { $gt: now } }).populate('projectId', 'name').sort({ startDate: 1 }).lean(),
+      this.leaveRequests.countDocuments({ teamMemberId: memberId, status: LeaveStatus.PENDING }),
+      this.timesheets.countDocuments({ engineerIds: memberId, status: TimesheetStatus.SUBMITTED }),
+      this.timesheets.countDocuments({ engineerIds: memberId, status: TimesheetStatus.REJECTED }),
+      this.vehicles.findOne({ assignedEngineerId: memberId, isActive: true }).lean(),
+      this.dutyOfCare.find({ teamMemberId: memberId }).sort({ updatedAt: -1 }).limit(3).lean(),
+      this.leaveRequests.find({ teamMemberId: memberId }).sort({ updatedAt: -1 }).limit(3).lean(),
+      this.timesheets.find({ engineerIds: memberId }).sort({ updatedAt: -1 }).limit(3).lean(),
+    ]);
+
+    const assignment = currentAssignment ?? upcomingAssignment;
+    const activity = [
+      ...recentDuties.map((duty: any) => ({ id: String(duty._id), type: 'duty' as const, text: duty.endTime ? 'You checked out of your shift' : 'You checked in for your shift', occurredAt: duty.updatedAt ?? duty.createdAt })),
+      ...recentLeaves.map((leave: any) => ({ id: String(leave._id), type: 'leave' as const, text: leave.status === LeaveStatus.PENDING ? 'You submitted a leave application' : `Your leave application was ${String(leave.status).toLowerCase()}`, occurredAt: leave.updatedAt ?? leave.createdAt })),
+      ...recentTimesheets.map((timesheet: any) => ({ id: String(timesheet._id), type: 'timesheet' as const, text: `Timesheet ${timesheet.jobNumber} is ${String(timesheet.status).toLowerCase()}`, occurredAt: timesheet.updatedAt ?? timesheet.createdAt })),
+    ]
+      .filter((item) => item.occurredAt)
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+      .slice(0, 5);
+
+    return {
+      profile: { name: member.fullName, jobTitle: member.jobTitle },
+      duty: { isClockedIn: Boolean(activeDuty), startedAt: activeDuty?.startTime ?? null },
+      assignment: assignment ? {
+        title: assignment.title,
+        projectName: (assignment.projectId as any)?.name ?? 'Project',
+        address: assignment.location?.address ?? 'Location not set',
+        startDate: assignment.startDate,
+        endDate: assignment.endDate,
+        isCurrent: Boolean(currentAssignment),
+      } : null,
+      leave: { balance: member.leaveBalance ?? 0, pending: pendingLeaveApplications },
+      timesheets: { submitted: submittedTimesheets, rejected: rejectedTimesheets },
+      vehicle: vehicle ? { registrationNumber: vehicle.registrationNumber, status: vehicle.status, lastUpdatedAt: vehicle.lastUpdatedAt ?? null } : null,
       activity,
     };
   }
