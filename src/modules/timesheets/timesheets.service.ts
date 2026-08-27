@@ -70,7 +70,21 @@ export class TimesheetsService {
     const occursOnDate = assignment && assignment.startDate <= this.endOfDay(claimDate) && assignment.endDate >= claimDate;
     if (!assignment || !this.sameId(assignment.projectId, projectId) || !isAssigned || !occursOnDate) throw new BadRequestException('You are not assigned to this project on the selected date');
   }
-  private async response(item: any) { const base = item.toObject ? item.toObject() : item; let projectDailyTotal = base.totalValue; let workingEngineerCount = base.workStatus === TimesheetWorkStatus.WORKING ? 1 : 0; if (base.projectId && base.assignmentId && base.engineerId) { const group = await this.timesheets.find({ projectId: base.projectId, assignmentId: base.assignmentId, claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } }).select('totalValue').lean(); projectDailyTotal = Number(group.reduce((sum: number, sheet: any) => sum + sheet.totalValue, 0).toFixed(2)); workingEngineerCount = group.length; } const payableShare = base.workStatus === TimesheetWorkStatus.OFF_DAY || !workingEngineerCount ? 0 : Number((projectDailyTotal / workingEngineerCount).toFixed(2)); return { ...base, id: base._id?.toString?.() ?? base.id, _id: undefined, engineer: base.engineerId && typeof base.engineerId === 'object' && base.engineerId.fullName ? { id: base.engineerId._id.toString(), name: base.engineerId.fullName } : base.engineerId?.toString?.() ?? null, project: base.projectId && typeof base.projectId === 'object' && base.projectId.name ? { id: base.projectId._id.toString(), name: base.projectId.name } : base.projectId?.toString?.() ?? null, projectDailyTotal, workingEngineerCount, payableShare }; }
+  private async response(item: any) {
+    const base = item.toObject ? item.toObject() : item;
+    const projectId = base.projectId?._id?.toString?.() ?? base.projectId?.toString?.() ?? null;
+    const assignmentId = base.assignmentId?._id?.toString?.() ?? base.assignmentId?.toString?.() ?? null;
+    const engineerId = base.engineerId?._id?.toString?.() ?? base.engineerId?.toString?.() ?? null;
+    let projectDailyTotal = base.totalValue;
+    let workingEngineerCount = base.workStatus === TimesheetWorkStatus.WORKING ? 1 : 0;
+    if (projectId && assignmentId && engineerId) {
+      const group = await this.timesheets.find({ projectId, assignmentId, claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } }).select('totalValue').lean();
+      projectDailyTotal = Number(group.reduce((sum: number, sheet: any) => sum + sheet.totalValue, 0).toFixed(2));
+      workingEngineerCount = group.length;
+    }
+    const payableShare = base.workStatus === TimesheetWorkStatus.OFF_DAY || !workingEngineerCount ? 0 : Number((projectDailyTotal / workingEngineerCount).toFixed(2));
+    return { ...base, id: base._id?.toString?.() ?? base.id, _id: undefined, projectId, assignmentId, engineerId, engineer: base.engineerId && typeof base.engineerId === 'object' && base.engineerId.fullName ? { id: engineerId, name: base.engineerId.fullName } : engineerId, project: base.projectId && typeof base.projectId === 'object' && base.projectId.name ? { id: projectId, name: base.projectId.name } : projectId, projectDailyTotal, workingEngineerCount, payableShare };
+  }
   private async findDocument(id: string) { if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Timesheet not found'); const item = await this.timesheets.findById(id).exec(); if (!item) throw new NotFoundException('Timesheet not found'); return item; }
   private async engineerForUser(userId: string) { const user = await this.users.findById(userId).select('email').lean(); const member = user ? await this.members.findOne({ workEmail: user.email, employeeCategory: 'ENGINEER' }).select('_id').lean() : null; if (!member) throw new BadRequestException('No engineer profile is associated with this account'); return member._id; }
   private localDate(value: string | Date) { const date = new Date(value); return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())); }
