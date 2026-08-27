@@ -45,6 +45,8 @@ import {
   RateCardSchema,
   Timesheet,
   TimesheetSchema,
+  TimesheetUnlockRequest,
+  TimesheetUnlockRequestSchema,
   VehicleCheck,
   VehicleCheckSchema,
 } from '../schemas';
@@ -78,6 +80,7 @@ import {
       { name: WorkspaceFile.name, schema: WorkspaceFileSchema },
       { name: RateCard.name, schema: RateCardSchema },
       { name: Timesheet.name, schema: TimesheetSchema },
+      { name: TimesheetUnlockRequest.name, schema: TimesheetUnlockRequestSchema },
       { name: VehicleCheck.name, schema: VehicleCheckSchema },
     ]),
   ],

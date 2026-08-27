@@ -50,12 +50,16 @@ interface ResetTokenRecord {
   expiresAt: string;
 }
 
+import { CloudinaryService } from '../../common/services/cloudinary.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly mongo: MongoService,
     private readonly redis: RedisService,
     private readonly emailQueue: EmailQueueService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   async register(
@@ -426,6 +430,53 @@ export class AuthService {
 
   async getMe(userId: string): Promise<PublicUser> {
     return this.toPublicUser(await this.findUserWithProfile(userId));
+  }
+
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+    file?: Express.Multer.File,
+  ): Promise<PublicUser> {
+    const user = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const profile = await this.mongo.userProfile.findFirst({ where: { authId: userId } });
+    if (!profile) {
+      throw new BadRequestException('User profile not found');
+    }
+
+    let avatarUrl = profile.avatarUrl;
+    if (file) {
+      const upload = await this.cloudinary.uploadTeamMemberPhoto(file.buffer, file.mimetype);
+      avatarUrl = upload.url;
+    }
+
+    await this.mongo.userProfile.update({
+      where: { id: profile.id },
+      data: {
+        firstName: dto.firstName ?? profile.firstName,
+        lastName: dto.lastName ?? profile.lastName,
+        avatarUrl,
+      },
+    });
+
+    // Also update TeamMember if exists to keep in sync
+    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: user.email });
+    if (teamMember) {
+      const newFullName = `${dto.firstName ?? profile.firstName} ${dto.lastName ?? profile.lastName}`.trim();
+      if (newFullName) {
+        teamMember.fullName = newFullName;
+      }
+      if (avatarUrl) {
+        teamMember.photoUrl = avatarUrl;
+        teamMember.hasPhoto = true;
+      }
+      await teamMember.save();
+    }
+
+    return this.getMe(userId);
   }
 
   async buildAuthResponse(user: any): Promise<AuthResponse> {

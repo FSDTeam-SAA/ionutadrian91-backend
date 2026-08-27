@@ -34,7 +34,7 @@ export class RiskAssessmentsService {
     if (query.assignmentId) f.assignmentId = query.assignmentId;
     if (query.status) f.status = query.status;
     if (userId) f.engineerId = await this.engineerFor(userId);
-    return this.assessments.find(f).sort({ createdAt: -1 }).lean().exec();
+    return this.assessments.find(f).populate('engineerId', 'fullName').populate('projectId', 'name').sort({ createdAt: -1 }).lean().exec();
   }
   async create(dto: CreateRiskAssessmentDto, userId: string) {
     const engineerId = await this.engineerFor(userId);
@@ -62,17 +62,9 @@ export class RiskAssessmentsService {
     const a = await this.owned(id, userId);
     if (a.status !== RiskAssessmentStatus.Draft)
       throw new BadRequestException('Only drafts can be submitted');
-    if (
-      !a.workActivity ||
-      !a.hazards.length ||
-      a.hazards.some(
-        (h) => !h.hazard || !h.risk || !h.controlMeasures?.length,
-      ) ||
-      !a.engineerConfirmed ||
-      !a.signatureUrl
-    )
+    if (!a.engineerConfirmed || !a.signatureUrl || !a.answers || a.answers.size === 0)
       throw new BadRequestException(
-        'Complete hazards, confirmation, and signature before submitting',
+        'Complete the assessment and signature before submitting',
       );
     return this.assessments
       .findByIdAndUpdate(
@@ -82,7 +74,7 @@ export class RiskAssessmentsService {
       )
       .exec();
   }
-  async review(id: string) {
+  async review(id: string, payload?: { adminNote?: string; adminDangerFlag?: boolean }) {
     const a = await this.assessments.findById(id).exec();
     if (!a) throw new NotFoundException('Risk assessment not found');
     if (a.status !== RiskAssessmentStatus.Submitted)
@@ -92,7 +84,11 @@ export class RiskAssessmentsService {
     return this.assessments
       .findByIdAndUpdate(
         id,
-        { status: RiskAssessmentStatus.Reviewed },
+        { 
+          status: RiskAssessmentStatus.Reviewed,
+          adminNote: payload?.adminNote || null,
+          adminDangerFlag: payload?.adminDangerFlag || false
+        },
         { new: true },
       )
       .exec();

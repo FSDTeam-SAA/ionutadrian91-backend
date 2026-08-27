@@ -13,7 +13,7 @@ import { VehicleChecksService } from './vehicle-checks.service';
 @ApiTags('Vehicle checks') @ApiBearerAuth() @UseGuards(AuthGuard, RolesGuard) @Controller('vehicle-checks')
 export class VehicleChecksController {
   constructor(private readonly checks: VehicleChecksService) {}
-  @Get('mine/due') @Roles(UserRole.User) due(@CurrentUser() user: AuthenticatedUser) { return this.checks.dueState(user.userId); }
+  @Get('mine/due') @Roles(UserRole.User) due(@CurrentUser() user: AuthenticatedUser, @Query('vehicleId') vehicleId?: string) { return this.checks.dueState(user.userId, vehicleId); }
   @Get('mine') @Roles(UserRole.User) mine(@CurrentUser() user: AuthenticatedUser, @Query() query: VehicleChecksQueryDto) { return this.checks.mine(user.userId, query); }
   @Get('mine/:id') @Roles(UserRole.User) mineOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) { return this.checks.mineOne(id, user.userId); }
   @Post('upload') @Roles(UserRole.User) @ApiConsumes('multipart/form-data') @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } })) upload(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file?: Express.Multer.File) { return this.checks.upload(user.userId, file); }

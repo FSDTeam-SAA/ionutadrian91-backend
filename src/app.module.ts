@@ -24,7 +24,7 @@ import { WorkspaceFilesModule } from './modules/workspace-files/workspace-files.
 import { TimesheetsModule } from './modules/timesheets/timesheets.module';
 import { VehicleChecksModule } from './modules/vehicle-checks/vehicle-checks.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
-
+import { NotificationsModule } from './modules/notifications/notifications.module';
 @Module({
   imports: [
     // Load environment variables globally
@@ -60,6 +60,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     TimesheetsModule,
     VehicleChecksModule,
     DashboardModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

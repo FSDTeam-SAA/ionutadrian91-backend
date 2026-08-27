@@ -79,6 +79,60 @@ export class LeaveService {
     return request;
   }
 
+  async updateLeave(
+    id: string,
+    userId: string,
+    dto: ApplyLeaveDto,
+    file?: Express.Multer.File,
+  ) {
+    const authUser = await this.mongo.authUser.findUnique({ where: { id: userId } });
+    if (!authUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const teamMember = await this.mongo.teamMemberModel.findOne({ workEmail: authUser.email });
+    if (!teamMember) {
+      throw new NotFoundException('Team member profile not found');
+    }
+
+    const leaveRequest = await this.mongo.leaveRequest.findOne({ _id: id, teamMemberId: teamMember._id });
+    if (!leaveRequest) {
+      throw new NotFoundException('Leave request not found');
+    }
+    
+    if (leaveRequest.status !== LeaveStatus.PENDING) {
+      throw new BadRequestException('Only pending leave requests can be updated');
+    }
+
+    const requestedDays = this.calculateDays(dto.startDate, dto.endDate);
+    if (teamMember.leaveBalance < requestedDays) {
+      throw new BadRequestException(
+        `You do not have enough leave balance. Requested: ${requestedDays}, Available: ${teamMember.leaveBalance}`,
+      );
+    }
+
+    if (file) {
+      const upload = await this.cloudinary.uploadDocument(
+        file.buffer,
+        file.mimetype,
+        file.originalname,
+      );
+      if (leaveRequest.documentPublicId) {
+        await this.cloudinary.removeDocument(leaveRequest.documentPublicId);
+      }
+      leaveRequest.documentUrl = upload.url;
+      leaveRequest.documentPublicId = upload.publicId;
+    }
+
+    leaveRequest.startDate = new Date(dto.startDate);
+    leaveRequest.endDate = new Date(dto.endDate);
+    leaveRequest.reason = dto.reason;
+
+    await leaveRequest.save();
+
+    return leaveRequest;
+  }
+
   async getMyHistory(userId: string) {
     const authUser = await this.mongo.authUser.findUnique({ where: { id: userId } });
     if (!authUser) {
