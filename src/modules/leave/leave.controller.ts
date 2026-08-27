@@ -46,6 +46,19 @@ export class LeaveController {
     return this.leaveService.applyLeave(req.user.userId, dto, file);
   }
 
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a pending leave request (Employee)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  async updateLeave(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() dto: ApplyLeaveDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.leaveService.updateLeave(id, req.user.userId, dto, file);
+  }
+
   @Get('my-history')
   @ApiOperation({ summary: 'View my leave balance and history (Employee)' })
   async getMyHistory(@Request() req: any) {

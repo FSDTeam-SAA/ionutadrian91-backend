@@ -6,9 +6,14 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Patch,
+  Param,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { ApiResponseDecorator } from '../../common/decorators';
@@ -182,6 +187,20 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(user, dto);
+  }
+
+  @Patch('me/profile')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiResponseDecorator(200, 'Profile updated', PublicUserDto)
+  updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: import('./dto/update-profile.dto').UpdateProfileDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.authService.updateProfile(user.userId, dto, file);
   }
 
   @Get('me')
