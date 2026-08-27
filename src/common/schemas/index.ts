@@ -20,3 +20,4 @@ export * from './risk-assessment.schema';
 export * from './workspace-file.schema';
 export * from './rate-card.schema';
 export * from './timesheet.schema';
+export * from './timesheet-unlock-request.schema';

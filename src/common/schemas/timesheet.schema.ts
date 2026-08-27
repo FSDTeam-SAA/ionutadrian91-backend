@@ -3,6 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type TimesheetDocument = HydratedDocument<Timesheet>;
 export enum TimesheetStatus { DRAFT = 'DRAFT', SUBMITTED = 'SUBMITTED', APPROVED = 'APPROVED', REJECTED = 'REJECTED' }
+export enum TimesheetWorkStatus { WORKING = 'WORKING', OFF_DAY = 'OFF_DAY' }
 
 export class TimesheetItem {
   @Prop({ required: true }) rateCode: string;
@@ -18,14 +19,19 @@ export class TimesheetItem {
 @Schema({ timestamps: true, collection: 'timesheets' })
 export class Timesheet {
   @Prop({ type: Date, required: true }) claimDate: Date;
-  @Prop({ type: [Types.ObjectId], ref: 'TeamMember', required: true }) engineerIds: Types.ObjectId[];
-  @Prop({ required: true, trim: true }) townCity: string;
-  @Prop({ required: true, trim: true, uppercase: true }) jobNumber: string;
-  @Prop({ required: true, trim: true }) polygonType: string;
-  @Prop({ required: true, trim: true }) polygonId: string;
-  @Prop({ required: true, trim: true }) featureId: string;
-  @Prop({ type: [TimesheetItem], required: true }) items: TimesheetItem[];
-  @Prop({ required: true, min: 0 }) totalValue: number;
+  // New project-based fields. Legacy records retain engineerIds and text job details.
+  @Prop({ type: Types.ObjectId, ref: 'Project', default: null }) projectId?: Types.ObjectId | null;
+  @Prop({ type: Types.ObjectId, ref: 'Whereabouts', default: null }) assignmentId?: Types.ObjectId | null;
+  @Prop({ type: Types.ObjectId, ref: 'TeamMember', default: null }) engineerId?: Types.ObjectId | null;
+  @Prop({ enum: Object.values(TimesheetWorkStatus), default: TimesheetWorkStatus.WORKING }) workStatus: TimesheetWorkStatus;
+  @Prop({ type: [Types.ObjectId], ref: 'TeamMember', default: [] }) engineerIds: Types.ObjectId[];
+  @Prop({ required: false, trim: true, default: '' }) townCity: string;
+  @Prop({ required: false, trim: true, uppercase: true, default: '' }) jobNumber: string;
+  @Prop({ required: false, trim: true, default: '' }) polygonType: string;
+  @Prop({ required: false, trim: true, default: '' }) polygonId: string;
+  @Prop({ required: false, trim: true, default: '' }) featureId: string;
+  @Prop({ type: [TimesheetItem], default: [] }) items: TimesheetItem[];
+  @Prop({ required: true, min: 0, default: 0 }) totalValue: number;
   @Prop({ enum: Object.values(TimesheetStatus), default: TimesheetStatus.DRAFT }) status: TimesheetStatus;
   @Prop({ type: Date, default: null }) submittedAt?: Date | null;
   @Prop({ type: Date, default: null }) reviewedAt?: Date | null;
@@ -36,4 +42,9 @@ export class Timesheet {
 export const TimesheetSchema = SchemaFactory.createForClass(Timesheet);
 TimesheetSchema.index({ status: 1, claimDate: -1 });
 TimesheetSchema.index({ engineerIds: 1, claimDate: -1 });
+TimesheetSchema.index(
+  { projectId: 1, assignmentId: 1, engineerId: 1, claimDate: 1 },
+  { unique: true, partialFilterExpression: { projectId: { $type: 'objectId' }, assignmentId: { $type: 'objectId' }, engineerId: { $type: 'objectId' } } },
+);
+TimesheetSchema.index({ projectId: 1, assignmentId: 1, claimDate: -1, status: 1 });
 TimesheetSchema.index({ jobNumber: 'text', townCity: 'text', polygonId: 'text', featureId: 'text', 'items.rateCode': 'text' });
