@@ -26,8 +26,20 @@ export class TimesheetsService {
     const assignments = await this.assignments.find({ $or: [{ engineers: engineerId }, { workers: engineerId }], startDate: { $lte: this.endOfDay(date) }, endDate: { $gte: date } }).populate('projectId', 'name status').populate('engineers', 'fullName').populate('workers', 'fullName').lean();
     const sheets = await this.timesheets.find({ engineerId, claimDate: date }).lean(); const byAssignment = new Map(sheets.map((sheet: any) => [sheet.assignmentId?.toString(), sheet]));
     return Promise.all(assignments.map(async (assignment: any) => {
-      const sheet = byAssignment.get(assignment._id.toString()); const unlock = date < this.localDate(this.today()) ? await this.unlockRequests.findOne({ assignmentId: assignment._id, projectId: assignment.projectId._id, engineerId, claimDate: date, status: TimesheetUnlockRequestStatus.APPROVED }).lean() : null;
-      return { assignmentId: assignment._id.toString(), project: { id: assignment.projectId._id.toString(), name: assignment.projectId.name }, claimDate: this.dateOnly(date), team: [...(assignment.engineers ?? []), ...(assignment.workers ?? [])].map((member: any) => ({ id: member._id.toString(), name: member.fullName })), canSubmit: Boolean(sheet) || date >= this.localDate(this.today()) || Boolean(unlock), requiresUnlock: !sheet && date < this.localDate(this.today()) && !unlock, timesheet: sheet ? await this.response(sheet) : null };
+      const assignmentId = assignment._id.toString(); const sheet = byAssignment.get(assignmentId); const team = [...(assignment.engineers ?? []), ...(assignment.workers ?? [])].map((member: any) => ({ id: member._id.toString(), name: member.fullName }));
+      const teamIds = team.map((member) => new Types.ObjectId(member.id));
+      const teamSheets = await this.timesheets.find({ assignmentId: assignment._id, claimDate: date, engineerId: { $in: teamIds } }).populate('engineerId', 'fullName').lean();
+      const summaries = await Promise.all(teamSheets.map((teamSheet: any) => this.response(teamSheet)));
+      const summaryByEngineer = new Map(summaries.map((summary: any) => [summary.engineerId, summary]));
+      const teamTimesheets = team.map((member) => {
+        const summary = summaryByEngineer.get(member.id);
+        const isOwnSheet = member.id === engineerId.toString();
+        // A draft remains private to its author; submitted/reviewed status is visible to the assigned team.
+        if (!summary || (!isOwnSheet && summary.status === TimesheetStatus.DRAFT)) return { engineer: member, status: 'NOT_SUBMITTED', workStatus: null, jobNumber: null, contributedValue: 0, payableShare: 0, rejectionReason: null };
+        return { engineer: member, status: summary.status, workStatus: summary.workStatus, jobNumber: summary.jobNumber || null, contributedValue: summary.totalValue, payableShare: summary.payableShare, rejectionReason: summary.status === TimesheetStatus.REJECTED ? summary.rejectionReason : null };
+      });
+      const unlock = date < this.localDate(this.today()) ? await this.unlockRequests.findOne({ assignmentId: assignment._id, projectId: assignment.projectId._id, engineerId, claimDate: date, status: TimesheetUnlockRequestStatus.APPROVED }).lean() : null;
+      return { assignmentId, project: { id: assignment.projectId._id.toString(), name: assignment.projectId.name }, claimDate: this.dateOnly(date), team, teamTimesheets, canSubmit: Boolean(sheet) || date >= this.localDate(this.today()) || Boolean(unlock), requiresUnlock: !sheet && date < this.localDate(this.today()) && !unlock, timesheet: sheet ? await this.response(sheet) : null };
     }));
   }
 
@@ -78,7 +90,9 @@ export class TimesheetsService {
     let projectDailyTotal = base.totalValue;
     let workingEngineerCount = base.workStatus === TimesheetWorkStatus.WORKING ? 1 : 0;
     if (projectId && assignmentId && engineerId) {
-      const group = await this.timesheets.find({ projectId: new Types.ObjectId(projectId), claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } }).select('totalValue').lean();
+      const query: any = { projectId: new Types.ObjectId(projectId), claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } };
+      if (base.jobNumber) query.jobNumber = base.jobNumber;
+      const group = await this.timesheets.find(query).select('totalValue').lean();
       projectDailyTotal = Number(group.reduce((sum: number, sheet: any) => sum + sheet.totalValue, 0).toFixed(2));
       workingEngineerCount = group.length;
     }

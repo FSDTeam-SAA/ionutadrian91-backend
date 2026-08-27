@@ -17,18 +17,21 @@ export class RiskAssessment {
   assignmentId: Types.ObjectId;
   @Prop({ type: Types.ObjectId, ref: 'Job', default: null })
   jobId?: Types.ObjectId | null;
-  @Prop({ required: true, trim: true }) workActivity: string;
-  @Prop({ type: [Object], default: [] }) hazards: {
-    hazard: string;
-    risk: string;
-    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-    controlMeasures: string[];
-  }[];
-  @Prop({ type: [String], default: [] }) ppeRequired: string[];
-  @Prop({ type: String, default: '' }) additionalComments: string;
+  @Prop({ type: Types.Map, of: String, default: {} })
+  answers: Map<string, string>;
   @Prop({ type: [String], default: [] }) photoUrls: string[];
   @Prop({ type: String, default: null }) signatureUrl?: string | null;
   @Prop({ type: Boolean, default: false }) engineerConfirmed: boolean;
+  @Prop({
+    type: {
+      latitude: { type: Number, required: false },
+      longitude: { type: Number, required: false },
+    },
+    default: null,
+  })
+  location?: { latitude: number; longitude: number } | null;
+  @Prop({ type: String, default: null }) adminNote?: string | null;
+  @Prop({ type: Boolean, default: false }) adminDangerFlag?: boolean;
   @Prop({
     enum: Object.values(RiskAssessmentStatus),
     default: RiskAssessmentStatus.Draft,

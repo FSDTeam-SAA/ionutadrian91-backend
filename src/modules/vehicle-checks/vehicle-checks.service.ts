@@ -36,14 +36,27 @@ export class VehicleChecksService {
   ) {}
 
   async upload(userId: string, file?: Express.Multer.File) {
-    await this.assignedVehicle(userId);
+    await this.getEngineer(userId);
     if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) throw new BadRequestException('Upload a JPG, PNG, or WebP image');
     if (file.size > 8 * 1024 * 1024) throw new BadRequestException('Image must be 8 MB or smaller');
     return this.cloudinary.uploadVehicleCheckPhoto(file.buffer, file.mimetype);
   }
 
-  async dueState(userId: string) {
-    const { vehicle, engineer } = await this.assignedVehicle(userId);
+  async dueState(userId: string, vehicleId?: string) {
+    const engineer = await this.getEngineer(userId);
+    let vehicle;
+    if (vehicleId) {
+      vehicle = await this.vehicles.findOne({ _id: vehicleId, isActive: true }).lean().exec();
+    } else {
+      vehicle = await this.vehicles.findOne({ isActive: true, assignedEngineerId: engineer._id }).lean().exec();
+    }
+    
+    const activeVehicles = await this.vehicles.find({ isActive: true }).select('_id registrationNumber').sort({ registrationNumber: 1 }).lean().exec();
+    
+    if (!vehicle) {
+       return { vehicle: null, activeVehicles: activeVehicles.map((v) => ({ id: v._id.toString(), registrationNumber: v.registrationNumber })) };
+    }
+
     const localDate = this.londonDate(); const weekStart = this.mondayOf(localDate);
     const [daily, weekly, recent, month] = await Promise.all([
       this.checks.exists({ vehicleId: vehicle._id, engineerId: engineer._id, type: VehicleCheckType.Daily, localDate }),
@@ -51,17 +64,25 @@ export class VehicleChecksService {
       this.checks.find({ vehicleId: vehicle._id, engineerId: engineer._id }).sort({ submittedAt: -1 }).limit(5).lean().exec(),
       this.checks.countDocuments({ vehicleId: vehicle._id, engineerId: engineer._id, localDate: { $gte: `${localDate.slice(0, 7)}-01`, $lte: localDate } }),
     ]);
-    return { vehicle: { id: vehicle._id.toString(), registrationNumber: vehicle.registrationNumber, trackerId: vehicle.trackerId }, timezone: 'Europe/London', localDate, weekStart, daily: { due: !daily, completed: !!daily }, weekly: { due: !weekly && localDate >= weekStart, completed: !!weekly }, stats: { checksThisMonth: month, openDefects: await this.checks.countDocuments({ vehicleId: vehicle._id, engineerId: engineer._id, status: { $in: [VehicleCheckStatus.Open, VehicleCheckStatus.Acknowledged] } }) }, recent };
+    return { vehicle: { id: vehicle._id.toString(), registrationNumber: vehicle.registrationNumber, trackerId: vehicle.trackerId }, activeVehicles: activeVehicles.map((v) => ({ id: v._id.toString(), registrationNumber: v.registrationNumber })), timezone: 'Europe/London', localDate, weekStart, daily: { due: !daily, completed: !!daily }, weekly: { due: !weekly && localDate >= weekStart, completed: !!weekly }, stats: { checksThisMonth: month, openDefects: await this.checks.countDocuments({ vehicleId: vehicle._id, engineerId: engineer._id, status: { $in: [VehicleCheckStatus.Open, VehicleCheckStatus.Acknowledged] } }) }, recent };
   }
 
   async mine(userId: string, query: VehicleChecksQueryDto) {
-    const { vehicle, engineer } = await this.assignedVehicle(userId);
-    return this.paginate({ vehicleId: vehicle._id, engineerId: engineer._id, ...this.filters(query) }, query);
+    const engineer = await this.getEngineer(userId);
+    return this.paginate({ engineerId: engineer._id, ...this.filters(query) }, query);
   }
-  async mineOne(id: string, userId: string) { const { engineer } = await this.assignedVehicle(userId); return this.findOne(id, { engineerId: engineer._id }); }
+  async mineOne(id: string, userId: string) { const engineer = await this.getEngineer(userId); return this.findOne(id, { engineerId: engineer._id }); }
 
   async submit(userId: string, dto: SubmitVehicleCheckDto) {
-    const { vehicle, engineer } = await this.assignedVehicle(userId);
+    const engineer = await this.getEngineer(userId);
+    let vehicle;
+    if (dto.vehicleId) {
+      vehicle = await this.vehicles.findOne({ _id: dto.vehicleId, isActive: true }).lean().exec();
+    } else {
+      vehicle = await this.vehicles.findOne({ isActive: true, assignedEngineerId: engineer._id }).lean().exec();
+    }
+    if (!vehicle) throw new BadRequestException('Selected vehicle is invalid or inactive');
+
     const localDate = this.londonDate(); const weekStart = this.mondayOf(localDate);
     this.validateSubmission(dto);
     const checklist = dto.type === VehicleCheckType.Daily ? this.normaliseDaily(dto) : [];
@@ -74,7 +95,7 @@ export class VehicleChecksService {
     }));
     const body: any = { vehicleId: vehicle._id, engineerId: engineer._id, type: dto.type, localDate, weekStart: dto.type === VehicleCheckType.Weekly ? weekStart : null, odometerMiles: dto.odometerMiles ?? null, fuelLevel: dto.fuelLevel ?? null, dashboardPhotoUrl: dto.dashboardPhotoUrl ?? null, checklist, weeklyPhotos, conditionNote: dto.conditionNote?.trim() || null, signatureUrl: dto.signatureUrl ?? null, engineerConfirmed: true, defectCount: defects.length, dangerousDefectCount: defects.filter((item) => item.result === VehicleChecklistResult.Dangerous).length, status: defects.length ? VehicleCheckStatus.Open : VehicleCheckStatus.Completed, submittedAt: new Date() };
     try { return await this.checks.create(body); }
-    catch (error: any) { if (error?.code === 11000) throw new ConflictException(`A ${dto.type.toLowerCase()} check is already submitted for this due period`); throw error; }
+    catch (error: any) { if (error?.code === 11000) throw new ConflictException(`A ${dto.type.toLowerCase()} check is already submitted for this vehicle on this due period`); throw error; }
   }
 
   async list(query: VehicleChecksQueryDto) { return this.paginate(this.filters(query), query); }
@@ -138,7 +159,7 @@ export class VehicleChecksService {
   }
   private async paginate(filter: any, query: VehicleChecksQueryDto) { const page = query.page ?? 1; const limit = Math.min(query.limit ?? 20, 100); const [items, total] = await Promise.all([this.checks.find(filter).populate('vehicleId', 'registrationNumber').populate('engineerId', 'fullName workEmail').sort({ submittedAt: -1 }).skip((page - 1) * limit).limit(limit).lean().exec(), this.checks.countDocuments(filter)]); return { items, total, page, limit }; }
   private async findOne(id: string, additional: any = {}) { if (!Types.ObjectId.isValid(id)) throw new NotFoundException('Vehicle check not found'); const check = await this.checks.findOne({ _id: id, ...additional }).populate('vehicleId', 'registrationNumber').populate('engineerId', 'fullName workEmail').lean().exec(); if (!check) throw new NotFoundException('Vehicle check not found'); return check; }
-  private async assignedVehicle(userId: string) { const user = await this.users.findById(userId).select('email').lean().exec(); const engineer = user ? await this.engineers.findOne({ workEmail: user.email }).select('_id fullName').lean().exec() : null; if (!engineer) throw new ForbiddenException('No engineer profile is associated with this account'); const vehicle = await this.vehicles.findOne({ isActive: true, assignedEngineerId: engineer._id }).exec(); if (!vehicle) throw new ForbiddenException('No active vehicle is assigned to you'); return { vehicle, engineer }; }
+  private async getEngineer(userId: string) { const user = await this.users.findById(userId).select('email').lean().exec(); const engineer = user ? await this.engineers.findOne({ workEmail: user.email }).select('_id fullName').lean().exec() : null; if (!engineer) throw new ForbiddenException('No engineer profile is associated with this account'); return engineer; }
   private londonDate(now = new Date()) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now); }
   private mondayOf(localDate: string) { const [year, month, day] = localDate.split('-').map(Number); const date = new Date(Date.UTC(year, month - 1, day)); const offset = (date.getUTCDay() + 6) % 7; date.setUTCDate(date.getUTCDate() - offset); return date.toISOString().slice(0, 10); }
 }

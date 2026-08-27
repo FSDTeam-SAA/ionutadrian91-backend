@@ -21,6 +21,7 @@ export class SubmitVehicleCheckDto {
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => WeeklyPhotoDto) weeklyPhotos?: WeeklyPhotoDto[];
   @IsOptional() @IsString() @MaxLength(2000) conditionNote?: string;
   @IsOptional() @IsUrl() signatureUrl?: string;
+  @IsOptional() @IsString() vehicleId?: string;
   @IsBoolean() engineerConfirmed: boolean;
 }
 export class VehicleChecksQueryDto {
