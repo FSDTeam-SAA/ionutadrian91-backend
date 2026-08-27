@@ -78,7 +78,7 @@ export class TimesheetsService {
     let projectDailyTotal = base.totalValue;
     let workingEngineerCount = base.workStatus === TimesheetWorkStatus.WORKING ? 1 : 0;
     if (projectId && assignmentId && engineerId) {
-      const group = await this.timesheets.find({ projectId: new Types.ObjectId(projectId), assignmentId: new Types.ObjectId(assignmentId), claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } }).select('totalValue').lean();
+      const group = await this.timesheets.find({ projectId: new Types.ObjectId(projectId), claimDate: this.localDate(base.claimDate), workStatus: TimesheetWorkStatus.WORKING, status: { $in: [TimesheetStatus.SUBMITTED, TimesheetStatus.APPROVED] } }).select('totalValue').lean();
       projectDailyTotal = Number(group.reduce((sum: number, sheet: any) => sum + sheet.totalValue, 0).toFixed(2));
       workingEngineerCount = group.length;
     }
