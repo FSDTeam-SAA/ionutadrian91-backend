@@ -21,6 +21,19 @@ export class RiskAssessment {
   answers: Map<string, string>;
   @Prop({ type: [String], default: [] }) photoUrls: string[];
   @Prop({ type: String, default: null }) signatureUrl?: string | null;
+  @Prop({
+    type: [
+      {
+        engineerId: { type: Types.ObjectId, ref: 'TeamMember' },
+        signatureUrl: String,
+        signedAt: Date,
+        name: String,
+      },
+    ],
+    default: [],
+  })
+  signatures: { engineerId: Types.ObjectId; signatureUrl: string; signedAt: Date; name?: string }[];
+
   @Prop({ type: Boolean, default: false }) engineerConfirmed: boolean;
   @Prop({
     type: {
