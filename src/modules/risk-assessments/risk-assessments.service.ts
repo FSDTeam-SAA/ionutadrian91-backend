@@ -36,15 +36,88 @@ export class RiskAssessmentsService {
     if (userId) f.engineerId = await this.engineerFor(userId);
     return this.assessments.find(f).populate('engineerId', 'fullName').populate('projectId', 'name').sort({ createdAt: -1 }).lean().exec();
   }
+  async getLatestForAssignment(assignmentId: string, userId: string) {
+    const engineerId = await this.engineerFor(userId);
+    const assignment = await this.assignments.findById(assignmentId).lean().exec();
+    if (!assignment) throw new NotFoundException('Assignment not found');
+    const isAssigned = [...(assignment.engineers ?? []), ...(assignment.workers ?? [])].some((memberId: any) => this.sameId(memberId, engineerId));
+    if (!isAssigned) throw new ForbiddenException('You are not assigned to this assignment');
+    const assessment = await this.assessments.findOne({ assignmentId }).sort({ createdAt: -1 }).lean().exec();
+    if (assessment) {
+      const mySig = assessment.signatures?.find((s: any) => s.engineerId.toString() === engineerId.toString());
+      if (mySig) {
+        (assessment as any).mySignatureUrl = mySig.signatureUrl;
+      }
+    }
+    return assessment;
+  }
   async create(dto: CreateRiskAssessmentDto, userId: string) {
     const engineerId = await this.engineerFor(userId);
     await this.validateAssignment(dto.projectId, dto.assignmentId, engineerId);
+    
+    const user = await this.members.db
+      .collection('auth_users')
+      .findOne({ _id: new Types.ObjectId(userId) });
+
+    const member = user ? await this.members.findOne({ workEmail: user.email }).lean().exec() : null;
+    const name = member ? member.fullName : "Creator";
+
     return this.assessments.create({
       ...dto,
       engineerId,
       assessmentNumber: `RA-${Date.now()}`,
       status: RiskAssessmentStatus.Draft,
+      signatures: dto.signatureUrl ? [{
+        engineerId,
+        signatureUrl: dto.signatureUrl,
+        signedAt: new Date(),
+        name
+      }] : []
     });
+  }
+
+  async signAndUpdate(id: string, payload: any, userId: string) {
+    const engineerId = await this.engineerFor(userId);
+    const assessment = await this.assessments.findById(id).exec();
+    if (!assessment) throw new NotFoundException('Risk assessment not found');
+    
+    await this.validateAssignment(assessment.projectId.toString(), assessment.assignmentId.toString(), engineerId);
+    
+    const existingSigIndex = assessment.signatures.findIndex(s => s.engineerId.toString() === engineerId.toString());
+    
+    const user = await this.members.db
+      .collection('auth_users')
+      .findOne({ _id: new Types.ObjectId(userId) });
+    const member = user ? await this.members.findOne({ workEmail: user.email }).lean().exec() : null;
+    const name = member ? member.fullName : "Engineer";
+
+    const newSignature = {
+      engineerId,
+      signatureUrl: payload.signatureUrl,
+      signedAt: new Date(),
+      name
+    };
+
+    if (existingSigIndex >= 0) {
+      assessment.signatures[existingSigIndex] = newSignature;
+    } else {
+      assessment.signatures.push(newSignature);
+    }
+    
+    if (payload.answers) {
+      assessment.answers = payload.answers;
+    }
+    
+    // Ensure backwards compatibility for original creator's signature
+    if (!assessment.signatureUrl && payload.signatureUrl) {
+       assessment.signatureUrl = payload.signatureUrl;
+       assessment.engineerConfirmed = true;
+    }
+
+    assessment.markModified('signatures');
+    assessment.markModified('answers');
+    
+    return assessment.save();
   }
   async update(id: string, dto: UpdateRiskAssessmentDto, userId: string) {
     const a = await this.owned(id, userId);

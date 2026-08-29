@@ -46,11 +46,11 @@ export class CreateWhereaboutsDto {
   @IsNotEmpty()
   endDate: string;
 
-  @ApiProperty({ type: LocationDto })
-  @ValidateNested()
+  @ApiProperty({ type: [LocationDto] })
+  @ValidateNested({ each: true })
   @Type(() => LocationDto)
   @IsNotEmpty()
-  location: LocationDto;
+  locations: LocationDto[];
 
   @ApiPropertyOptional({ type: [String], description: 'Array of TeamMember IDs (Engineers)' })
   @IsOptional()
