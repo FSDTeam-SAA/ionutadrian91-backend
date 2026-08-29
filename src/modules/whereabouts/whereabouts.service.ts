@@ -129,7 +129,7 @@ export class WhereaboutsService {
       .populate('projectId', 'name')
       .populate('engineers', 'fullName')
       .populate('workers', 'fullName')
-      .select('title startDate endDate location projectId engineers workers');
+      .select('title startDate endDate locations projectId engineers workers');
 
     return assignments;
   }

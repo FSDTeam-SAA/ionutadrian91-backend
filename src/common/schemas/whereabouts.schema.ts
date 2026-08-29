@@ -17,19 +17,25 @@ export class Whereabouts {
   @Prop({ type: Date, required: true })
   endDate: Date;
 
-  @Prop({
-    type: {
-      address: { type: String, required: true },
-      latitude: { type: Number, default: null },
-      longitude: { type: Number, default: null },
-    },
-    required: true,
-  })
-  location: {
+  location?: {
     address: string;
     latitude?: number | null;
     longitude?: number | null;
   };
+
+  @Prop({
+    type: [{
+      address: { type: String, required: true },
+      latitude: { type: Number, default: null },
+      longitude: { type: Number, default: null },
+    }],
+    default: [],
+  })
+  locations: {
+    address: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }[];
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'TeamMember' }], default: [] })
   engineers: Types.ObjectId[];
