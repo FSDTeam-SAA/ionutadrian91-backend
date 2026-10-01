@@ -31,8 +31,6 @@ uploads/
 storage/
 
 # Env files
-.env
-.env.*
 !.env.example
 !.env.*.example
 *.local
@@ -75,7 +73,6 @@ Thumbs.db
 *.sublime-workspace
 
 # VS Code
-.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -100,3 +97,4 @@ generated/
 AGENTS.md
 gstack_skill_cheatsheet.md
 graphify-out/
+config.bat
